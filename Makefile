@@ -23,6 +23,9 @@ SHELL := bash
 ##
 ## User interface / usage
 ##
+default-target:
+	@echo "let's verify everything"
+	make -f Verifile all
 
 # By default, let's print out some help
 .PHONY: usage

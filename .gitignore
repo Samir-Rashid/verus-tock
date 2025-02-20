@@ -94,3 +94,4 @@ boards/apollo3/redboard_artemis_nano/redboard-artemis-nano-tests.bin
 /verus
 /verus-analyzer
 /activate.sh
+verus/

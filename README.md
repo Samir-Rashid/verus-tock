@@ -6,6 +6,8 @@
 you need to have verus installed in this exact relative path:
 `../verus`**
 
+NOTE(Samir): Put [my verus fork](https://github.com/samir-Rashid/verus) in `./verus/`
+
 Needs to use Rust stable and potentially a specific version that works with Verus.
 
 To run the whole verification pipeline:
