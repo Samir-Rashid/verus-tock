@@ -6,7 +6,7 @@
 you need to have verus installed in this exact relative path:
 `../verus`**
 
-NOTE(Samir): Put [my verus fork](https://github.com/samir-Rashid/verus) in `./verus/`
+NOTE(Samir): Put [my verus fork](https://github.com/samir-Rashid/verus) in `./verus/`. Then run `make` to have everything set up.
 
 Needs to use Rust stable and potentially a specific version that works with Verus.
 
