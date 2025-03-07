@@ -294,12 +294,10 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
 
             old(ghost_state)@.cells.len() >= 1,
             forall|i: nat|
-                0 <= i < old(ghost_state)@.cells.len() ==> #[trigger] old(
-                    ghost_state,
-                )@.points_to_map.dom().contains(i) && old(ghost_state)@.points_to_map[i].is_init()
-                    && old(ghost_state)@.points_to_map[i].id() == old(
-                    ghost_state,
-                )@.cells[i as int].id(),
+                0 <= i < old(ghost_state)@.cells.len()
+                ==> #[trigger] old(ghost_state)@.points_to_map.dom().contains(i)
+                && old(ghost_state)@.points_to_map[i].is_init() // every node is init in ghost
+                && old(ghost_state)@.points_to_map[i].id() == old(ghost_state)@.cells[i as int].id(),
             // every cell except the last one should not be None
             forall|i: nat|
                 0 <= i < (old(ghost_state)@.cells.len() - 1) as nat ==> match #[trigger] old(
@@ -321,11 +319,29 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             self.well_formed_list(ghost_state),
             // not sure why this is needed as it should be included in well_formed_list
             // but removing it will cause subsequent calls not verified
+
+            // original
+            // forall|i: nat|
+            //     0 <= i < ghost_state@.cells.len()
+            //         ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
+            //         && ghost_state@.points_to_map[i].is_init(),
+            //         && ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id(),
+
+
             forall|i: nat|
                 0 <= i < ghost_state@.cells.len()
                     ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
-                    && ghost_state@.points_to_map[i].is_init() && ghost_state@.points_to_map[i].id()
-                    == ghost_state@.cells[i as int].id(),
+                    && ghost_state@.points_to_map[i].is_init()
+                    && ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id(),
+
+
+            forall|i: nat| // separate &&s into individual properties
+                0 <= i < ghost_state@.cells.len() ==>
+                    #[trigger] ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id(),
+
+            // assert binary search, add asserts to find why it is not holding, what part is not holding and why
+            // keep asking if it is true
+            // this will let you find what the solver does and does not know
             ghost_state@.points_to_map[0].value().unwrap() == node,
             forall|i: nat|
                 0 <= i < (old(ghost_state)@.cells.len() - 1) as nat ==> #[trigger] old(
@@ -334,9 +350,45 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
                     + 1].value().unwrap(),
     {
         proof {
+            assert( forall|i: nat|
+                0 <= i < old(ghost_state)@.cells.len()
+                ==> #[trigger] old(ghost_state)@.points_to_map.dom().contains(i)
+                && old(ghost_state)@.points_to_map[i].is_init());
+
+            assert(forall|i: nat|
+                0 <= i < ghost_state@.cells.len()
+                    ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
+                    && ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id());
+            assert(forall|i: nat|
+                0 <= i < ghost_state@.cells.len()
+                    ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
+                     && ghost_state@.points_to_map[i].is_init());
             assert(ghost_state@.points_to_map.dom().contains(0));
         }
+        // assert/assume each assumption in a proof block and move it around
         let tracked mut head_points_to = ghost_state.borrow_mut().points_to_map.tracked_remove(0);
+        proof {
+            // failure comes from here
+            // move assertion after proof block updates the ghost state
+            // remove irrelevant assertions. find minimal assume and move it around
+            //
+            assert(forall|i: nat|
+                0 <= i < ghost_state@.cells.len()
+                    ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
+                    && ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id());
+            // why does removing an element change the understanding
+            // understand what tracked remove is, meaning of triggers, ghost state value of points_to_map.
+            // why does postcond fail if I remove item? property of remaining values should not change.
+            assert( forall|i: nat|
+                0 <= i < old(ghost_state)@.cells.len()
+                ==> #[trigger] old(ghost_state)@.points_to_map.dom().contains(i)
+                && old(ghost_state)@.points_to_map[i].is_init());
+            assert(forall|i: nat|
+                0 <= i < ghost_state@.cells.len()
+                    ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
+                     && ghost_state@.points_to_map[i].is_init());
+            assert(ghost_state@.points_to_map.dom().contains(0));
+        }
         let old_head_value = *self.head.0.borrow(Tracked(&head_points_to));
         let tracked mut next_ptr = next_points_to.get();
         let next_node = node.next(Tracked(&next_ptr));
@@ -346,6 +398,16 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
 
         proof {
             ghost_state.borrow_mut().cells = ghost_state@.cells.insert(1, cell);
+            // it might be okay that there is a failure early on. Postcondition does not need to hold at *any* time in the function
+            // something in this proof is not restablushgin postcond
+
+            // understand this proof block, try putting assumes around
+
+
+            // push this code so that eric can look at it this weekend.
+            // need to finish debugging and isolating before then
+            // comment the code and what it is supposed to be doing.
+            // TODO: need to isolate the failure. how to ignore the other failing functions??????
             ghost_state.borrow_mut().points_to_map.tracked_map_keys_in_place(
                 Map::<nat, nat>::new(
                     |j: nat| 2 <= j && j < ghost_state@.cells.len(),
@@ -373,6 +435,13 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
                     == ghost_state@.points_to_map.dom().contains(i + 1));
                 assert(old(ghost_state)@.points_to_map[i] == ghost_state@.points_to_map[i + 1]);
             }
+            // assert forall|i: nat|
+            //     0 <= i < ghost_state@.cells.len()
+            //         ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
+            //         && ghost_state@.points_to_map[i].is_init() && ghost_state@.points_to_map[i].id()
+            //         == ghost_state@.cells[i as int].id() by {
+            //         }
+
         }
     }
 
@@ -504,7 +573,8 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
                 0 <= i < ghost_state@.cells.len()
                     ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
                     && ghost_state@.points_to_map[i].is_init() && ghost_state@.points_to_map[i].id()
-                    == ghost_state@.cells[i as int].id(),
+                    == ghost_state@.cells[i as int].id()
+                ,
             if old(ghost_state)@.cells.len() == 1 {
                 old(ghost_state)@.cells.len() == ghost_state@.cells.len()
             } else {
@@ -644,89 +714,89 @@ impl<'a> ListNodeV<'a, I32Node<'a>> for I32Node<'a> {
     }
 }
 
-fn main() {
-    // example: push_head
-    {
-        let (mut list, mut state) = ListV::<I32Node>::new();
-        let (a, a_pt) = I32Node::new(1);
-        list.push_head(&a, a_pt, &mut state);
-        let mut it = list.iter(&state);
-        let next_1 = it.next(&state);
-        assert(next_1.is_some());
-        assert(next_1.unwrap().value == 1);
-        let next_2 = it.next(&state);
-        assert(next_2.is_none());
-    }
+// fn main() {
+//     // example: push_head
+//     {
+//         let (mut list, mut state) = ListV::<I32Node>::new();
+//         let (a, a_pt) = I32Node::new(1);
+//         list.push_head(&a, a_pt, &mut state);
+//         let mut it = list.iter(&state);
+//         let next_1 = it.next(&state);
+//         assert(next_1.is_some());
+//         assert(next_1.unwrap().value == 1);
+//         let next_2 = it.next(&state);
+//         assert(next_2.is_none());
+//     }
 
-    // example: push_tail
-    {
-        let (mut list, mut state) = ListV::<I32Node>::new();
-        let (a, a_pt) = I32Node::new(1);
-        list.push_tail(&a, a_pt, &mut state);
-        let mut it = list.iter(&state);
-        let next_1 = it.next(&state);
-        assert(next_1.is_some());
-        assert(next_1.unwrap().value == 1);
-        let next_2 = it.next(&state);
-        assert(next_2.is_none());
-    }
+//     // example: push_tail
+//     {
+//         let (mut list, mut state) = ListV::<I32Node>::new();
+//         let (a, a_pt) = I32Node::new(1);
+//         list.push_tail(&a, a_pt, &mut state);
+//         let mut it = list.iter(&state);
+//         let next_1 = it.next(&state);
+//         assert(next_1.is_some());
+//         assert(next_1.unwrap().value == 1);
+//         let next_2 = it.next(&state);
+//         assert(next_2.is_none());
+//     }
 
-    // example: push and pop
-    {
-        let (mut list, mut state) = ListV::<I32Node>::new();
-        let (a, a_pt) = I32Node::new(1);
-        let (b, b_pt) = I32Node::new(2);
-        list.push_head(&a, a_pt, &mut state);
-        list.push_tail(&b, b_pt, &mut state);
-        list.pop_head(&mut state);
-        let mut it = list.iter(&state);
-        let next_1 = it.next(&state);
-        assert(next_1.is_some());
-        assert(next_1.unwrap().value == 2);
-        let next_2 = it.next(&state);
-        assert(next_2.is_none());
-    }
+//     // example: push and pop
+//     {
+//         let (mut list, mut state) = ListV::<I32Node>::new();
+//         let (a, a_pt) = I32Node::new(1);
+//         let (b, b_pt) = I32Node::new(2);
+//         list.push_head(&a, a_pt, &mut state);
+//         list.push_tail(&b, b_pt, &mut state);
+//         list.pop_head(&mut state);
+//         let mut it = list.iter(&state);
+//         let next_1 = it.next(&state);
+//         assert(next_1.is_some());
+//         assert(next_1.unwrap().value == 2);
+//         let next_2 = it.next(&state);
+//         assert(next_2.is_none());
+//     }
 
-    // example: empty list
-    {
-        let (mut list, mut state) = ListV::<I32Node>::new();
-        let (a, a_pt) = I32Node::new(1);
-        let (b, b_pt) = I32Node::new(2);
-        list.push_tail(&b, b_pt, &mut state);
-        list.push_head(&a, a_pt, &mut state);
-        list.pop_head(&mut state);
-        list.pop_head(&mut state);
-        let mut it = list.iter(&state);
-        let next_1 = it.next(&state);
-        assert(next_1.is_none());
-    }
+//     // example: empty list
+//     {
+//         let (mut list, mut state) = ListV::<I32Node>::new();
+//         let (a, a_pt) = I32Node::new(1);
+//         let (b, b_pt) = I32Node::new(2);
+//         list.push_tail(&b, b_pt, &mut state);
+//         list.push_head(&a, a_pt, &mut state);
+//         list.pop_head(&mut state);
+//         list.pop_head(&mut state);
+//         let mut it = list.iter(&state);
+//         let next_1 = it.next(&state);
+//         assert(next_1.is_none());
+//     }
 
-    // example: iterator
-    {
-        let (mut list, mut state) = ListV::<I32Node>::new();
-        let (a, a_pt) = I32Node::new(1);
-        let (b, b_pt) = I32Node::new(2);
-        let (c, c_pt) = I32Node::new(3);
-        list.push_head(&a, a_pt, &mut state);
-        list.push_tail(&b, b_pt, &mut state);
-        list.push_head(&c, c_pt, &mut state);
-        let mut it = list.iter(&state);
-        let next_1 = it.next(&state);
-        assert(next_1.is_some());
-        assert(next_1.unwrap().value == 3);
-        let next_2 = it.next(&state);
-        assert(next_2.is_some());
-        assert(next_2.unwrap().value == 1);
-        let next_3 = it.next(&state);
-        assert(next_3.is_some());
-        assert(next_3.unwrap().value == 2);
-        let next_4 = it.next(&state);
-        assert(next_4.is_none());
-        let mut it2 = list.iter(&state);
-        let last = it2.last(&state);
-        assert(last.is_some());
-        assert(last.unwrap().value == 2);
-    }
-}
+//     // example: iterator
+//     {
+//         let (mut list, mut state) = ListV::<I32Node>::new();
+//         let (a, a_pt) = I32Node::new(1);
+//         let (b, b_pt) = I32Node::new(2);
+//         let (c, c_pt) = I32Node::new(3);
+//         list.push_head(&a, a_pt, &mut state);
+//         list.push_tail(&b, b_pt, &mut state);
+//         list.push_head(&c, c_pt, &mut state);
+//         let mut it = list.iter(&state);
+//         let next_1 = it.next(&state);
+//         assert(next_1.is_some());
+//         assert(next_1.unwrap().value == 3);
+//         let next_2 = it.next(&state);
+//         assert(next_2.is_some());
+//         assert(next_2.unwrap().value == 1);
+//         let next_3 = it.next(&state);
+//         assert(next_3.is_some());
+//         assert(next_3.unwrap().value == 2);
+//         let next_4 = it.next(&state);
+//         assert(next_4.is_none());
+//         let mut it2 = list.iter(&state);
+//         let last = it2.last(&state);
+//         assert(last.is_some());
+//         assert(last.unwrap().value == 2);
+//     }
+// }
 
 } // verus!

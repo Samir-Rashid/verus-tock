@@ -200,6 +200,8 @@ impl<'a, A: Alarm<'a>> Time for VirtualMuxAlarm<'a, A> {
 impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
     type State = VirtualMuxAlarmState<'a, A>;
 
+    // error: expression has mode spec, expected mode proof
+    // https://github.com/verus-lang/verus/issues/1460
     fn disarm(&self, state: &mut Tracked<Self::State>) -> (res: Result<(), ErrorCode>)
     ensures
     self.valid_state(state),
