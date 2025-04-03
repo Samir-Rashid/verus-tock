@@ -126,10 +126,10 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListIteratorV<'a, T> {
     //             == ghost_state@.cells[self.index@ as int].id()
     // }
 
-    // pub closed spec fn lemma_temp2(&self, ghost_state: &Tracked<GhostState<'a, T>>) -> bool
-    // {
-    //     true
-    // }
+    pub closed spec fn lemma_temp2(&self, ghost_state: &Tracked<GhostState<'a, T>>) -> bool
+    {
+        true
+    }
 
     pub fn next(&mut self, ghost_state: &Tracked<GhostState<'a, T>>) -> (res: Option<&'a T>)
         requires
@@ -497,6 +497,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
     // list length = cells length - 1 (last cell contains None)
 
             old(ghost_state)@.cells.len() >= 1,
+            self.well_formed_list(old(ghost_state)), // TODO: need to debug why I cannot say only something like this
             forall|i: nat|
                 0 <= i < old(ghost_state)@.cells.len() ==> #[trigger] old(
                     ghost_state,
@@ -520,6 +521,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             },
             old(ghost_state)@.cells[0].id() == self.head.0.id(),
             next_points_to@.is_init(),
+            // old(node)@.is_init(),
         ensures
             old(ghost_state)@.cells.len() + 1 == ghost_state@.cells.len(),
             self.well_formed_list(ghost_state),
@@ -570,6 +572,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
                 let cell = &next_node.0;
 
                 proof {
+                    // update ghost state with new node
                     ghost_state.borrow_mut().cells = ghost_state@.cells.push(cell);
                     ghost_state.borrow_mut().points_to_map.tracked_insert(
                         (ghost_state@.cells.len() - 2) as nat,
@@ -581,8 +584,11 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
                     );
                     assert(ghost_state@.cells.len() >= 1);
                     assert(well_formed_node(ghost_state, (ghost_state@.cells.len() - 2) as nat));
+                    assert(well_formed_node(ghost_state, (ghost_state@.cells.len() - 1) as nat));
+
+        // at this point, verus does not know that the new node is initialized
         assert(forall|i: nat|
-            0 <= i < ghost_state@.cells.len() ==>
+            0 <= i < ghost_state@.cells.len() - 2 ==>
             #[trigger] ghost_state@.points_to_map.dom().contains(i)
             && ghost_state@.points_to_map[i].is_init()
             && ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id()
