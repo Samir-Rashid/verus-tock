@@ -51,9 +51,15 @@ verify_kernel:
 		--extern=tock_registers=$(TOCK_REGISTERS) \
 		--extern=tock_cells=$(TOCK_CELLS) \
 		--extern=tock_tbf=$(TOCK_TBF) \
-		--crate-type=lib --export=$(KERNEL_VIR) --multiple-errors 5 
-		
-# --verify-function "push_head" --verify-module "kernel::collections"
+		--crate-type=lib --export=$(KERNEL_VIR) --multiple-errors 5
+
+profile_kernel:
+	verus kernel/src/lib.rs -L dependency=$(DEPS_DIR)/deps \
+		--extern=tock_registers=$(TOCK_REGISTERS) \
+		--extern=tock_cells=$(TOCK_CELLS) \
+		--extern=tock_tbf=$(TOCK_TBF) \
+		--crate-type=lib --export=$(KERNEL_VIR) --multiple-errors 5 --verify-module "collections::list_i"  --profile-all --rlimit 1
+# --verify-function ListV::head
 
 verify_virtual_alarm:
 	verus capsules/core/src/lib.rs -L dependency=$(DEPS_DIR)/deps \

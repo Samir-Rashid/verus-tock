@@ -16,6 +16,8 @@ To run the whole verification pipeline:
 make -f Verifile all
 ```
 
+To run tests: `vargo test -p rust_verify_test`
+
 Run the formatter:
 
 If you encounter an error due to lifetime issues, you can use the `--no-lifetime` flag to ignore them.
