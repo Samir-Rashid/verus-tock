@@ -53,6 +53,52 @@ pub open spec fn well_formed_node<'a, T: 'a + ?Sized + ListNodeV<'a, T>>(
     &&& ghost_state@.points_to_map[i].is_init()
     &&& ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id()
 }
+    pub open spec fn well_formed_list_out<'a, T: ?Sized + ListNodeV<'a, T>>(ghost_state: &Tracked<GhostState<'a, T>>) -> bool {
+        // list length = cells length - 1 (the last cell contains None)
+        &&& ghost_state@.cells.len() >= 1
+        &&& forall|i: nat|
+            0 <= i < ghost_state@.cells.len() ==> well_formed_node(
+                ghost_state,
+                i,
+            )
+        // every cell except the last one should not be None
+        &&& forall|i: nat|
+            0 <= i < (ghost_state@.cells.len() - 1) as nat
+                ==> match #[trigger] ghost_state@.points_to_map[i].value() {
+                Option::Some(_) => true,
+                Option::None => false,
+            }
+            // the last cell contains None
+        &&& match ghost_state@.points_to_map[(ghost_state@.cells.len() - 1) as nat].value() {
+            Option::Some(_) => false,
+            Option::None => true,
+        }
+        &&& ghost_state@.points_to_map.dom().contains((ghost_state@.cells.len() - 1) as nat)
+        // &&& ghost_state@.cells[0].id() == self.head.0.id()
+        &&& forall|i: nat|
+            0 <= i < ghost_state@.cells.len() ==>
+            #[trigger] ghost_state@.points_to_map.dom().contains(i)
+        // &&& forall|i: nat|
+        //     0 <= i < ghost_state@.cells.len() ==>
+        //     #[trigger] ghost_state@.points_to_map[i].is_init()
+    //     &&& forall|i: nat|
+    //         0 <= i < ghost_state@.cells.len() ==>
+    //         #[trigger] ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id()
+    }
+
+    /// Well formed list implies every node is well formed
+    /// NOTE: cannot broadcast this due to verus panic https://github.com/verus-lang/verus/issues/1561
+    pub proof fn lemma_temp<'a, T: ?Sized + ListNodeV<'a, T>>(ghost_state: &mut Tracked<GhostState<'a, T>>)
+        requires
+            #[trigger] well_formed_list_out(old(ghost_state)),
+        ensures
+            // all nodes well formed
+            forall|i: nat|
+            0 <= i < #[trigger] ghost_state@.cells.len() ==> #[trigger] well_formed_node(
+                 ghost_state,
+                i,
+            )
+    { }
 
 impl<'a, T: ?Sized + ListNodeV<'a, T>> ListIteratorV<'a, T> {
     pub closed spec fn valid_list_iterator(
@@ -112,19 +158,23 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListIteratorV<'a, T> {
 
 
 
-    // pub broadcast proof fn lemma_temp(&mut self, ghost_state: &Tracked<GhostState<'a, T>>)
-    // pub closed spec fn lemma_temp(&self, ghost_state: &Tracked<GhostState<'a, T>>) -> bool
+    // /// Well formed list implies every node is well formed
+    // pub broadcast proof fn lemma_temp(&self, ghost_state: &mut Tracked<GhostState<'a, T>>)
     //     requires
-    //     // p.aligned(), v.aligned(), p.modulo == v.modulo,
+    //         well_formed_list(old(ghost_state)),
     //     ensures
-    //     // (#[trigger] p.add(v)).aligned(),
-    //     // p.add(v).modulo == lib::same_or_arbitrary(p.modulo, v.modulo),
-    // {
-    //         &&& ghost_state@.points_to_map.dom().contains(self.index@)
-    //         &&& ghost_state@.points_to_map[self.index@].is_init()
-    //         &&& ghost_state@.points_to_map[self.index@].id()
-    //             == ghost_state@.cells[self.index@ as int].id()
-    // }
+    //         // inlined all nodes well formed
+    //         #[trigger] ghost_state@.points_to_map.dom().contains(self.index@),
+    //         ghost_state@.points_to_map[self.index@].is_init(),
+    //         ghost_state@.points_to_map[self.index@].id()
+    //             == ghost_state@.cells[self.index@ as int].id(),
+    //         // all nodes well formed
+    //         forall|i: nat|
+    //         0 <= i < ghost_state@.cells.len() ==> well_formed_node(
+    //             ghost_state,
+    //             i,
+    //         )
+    // { }
 
     pub closed spec fn lemma_temp2(&self, ghost_state: &Tracked<GhostState<'a, T>>) -> bool
     {
