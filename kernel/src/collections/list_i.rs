@@ -54,6 +54,8 @@ pub open spec fn well_formed_node<'a, T: 'a + ?Sized + ListNodeV<'a, T>>(
     &&& ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id()
 }
 
+// move to inside scope, need to be in impl. lemma move inside impl
+// says all the ghost state corresponds to the listnodes. it's a linked list so I guess it unrolls the loop all the way down to establish all the maps are right
 pub open spec fn well_formed_list_out<'a, T: ?Sized + ListNodeV<'a, T>>(ghost_state: &Tracked<GhostState<'a, T>>) -> bool {
     // list length = cells length - 1 (the last cell contains None)
     &&& ghost_state@.cells.len() >= 1
@@ -76,6 +78,7 @@ pub open spec fn well_formed_list_out<'a, T: ?Sized + ListNodeV<'a, T>>(ghost_st
     }
     &&& ghost_state@.points_to_map.dom().contains((ghost_state@.cells.len() - 1) as nat)
     // &&& ghost_state@.cells[0].id() == self.head.0.id() // TODO: this property is needed
+    &&& ghost_state@.cells[0].id() == ghost_state@.points_to_map[0].id() // should be same as above
     &&& forall|i: nat|
         0 <= i < ghost_state@.cells.len() ==>
         #[trigger] ghost_state@.points_to_map.dom().contains(i)
@@ -378,7 +381,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             next_points_to@.is_init(),
         ensures
             old(ghost_state)@.cells.len() + 1 == ghost_state@.cells.len(),
-            well_formed_list_out(ghost_state),
+            well_formed_list_out(ghost_state) && ghost_state@.cells[0].id() == self.head.0.id(),
             old(ghost_state)@.cells[0].id() == self.head.0.id(),
             // not sure why this is needed as it should be included in well_formed_list
             // but removing it will cause subsequent calls not verified
@@ -555,6 +558,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             old(ghost_state)@.cells.len() + 1 == ghost_state@.cells.len(),
             well_formed_list_out(old(ghost_state)),
             old(ghost_state)@.cells[0].id() == self.head.0.id(),
+            ghost_state@.cells[0].id() == self.head.0.id(),
             // self.well_formed_list(ghost_state),
             // not sure why this is needed as it should be included in well_formed_list
             // but removing it will cause subsequent calls not verified
@@ -673,6 +677,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             old(ghost_state)@.cells[0].id() == self.head.0.id(),
         ensures
             self.well_formed_list(ghost_state),
+            ghost_state@.cells[0].id() == self.head.0.id(),
             // not sure why this is needed as it should be included in well_formed_list
             // but removing it will cause subsequent calls not verified
             forall|i: nat|
@@ -843,18 +848,18 @@ fn main() {
         assert(next_2.is_none());
     }
 
-    // // example: push_tail
-    // {
-    //     let (mut list, mut state) = ListV::<I32Node>::new();
-    //     let (a, a_pt) = I32Node::new(1);
-    //     list.push_tail(&a, a_pt, &mut state);
-    //     let mut it = list.iter(&state);
-    //     let next_1 = it.next(&state);
-    //     assert(next_1.is_some());
-    //     assert(next_1.unwrap().value == 1);
-    //     let next_2 = it.next(&state);
-    //     assert(next_2.is_none());
-    // }
+    // example: push_tail
+    {
+        let (mut list, mut state) = ListV::<I32Node>::new();
+        let (a, a_pt) = I32Node::new(1);
+        list.push_tail(&a, a_pt, &mut state);
+        let mut it = list.iter(&state);
+        let next_1 = it.next(&state);
+        assert(next_1.is_some());
+        assert(next_1.unwrap().value == 1);
+        let next_2 = it.next(&state);
+        assert(next_2.is_none());
+    }
 
     // // example: push and pop
     // {
