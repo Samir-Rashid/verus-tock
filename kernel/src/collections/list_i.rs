@@ -124,22 +124,11 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListIteratorV<'a, T> {
                     == ghost_state@.cells.len() && self.index@ == old(self).index@,
             },
     {
-        proof {
-            assert(ghost_state@.points_to_map.dom().contains(self.index@));
-            assert(ghost_state@.points_to_map[self.index@].is_init());
-            assert(ghost_state@.points_to_map[self.index@].id()
-                == ghost_state@.cells[self.index@ as int].id());
-            // self.lemma_temp(ghost_state);
-        }
         match self.cur {
             Some(res) => {
                 proof {
                     assert(self.index@ < (ghost_state@.cells.len() - 1) as nat);
                     self.index@ = self.index@ + 1;
-                    assert(ghost_state@.points_to_map.dom().contains(self.index@));
-                    assert(ghost_state@.points_to_map[self.index@].is_init());
-                    assert(ghost_state@.points_to_map[self.index@].id()
-                        == ghost_state@.cells[self.index@ as int].id());
                 }
 
                 let tracked points_to = ghost_state.borrow().points_to_map.tracked_borrow(
@@ -149,17 +138,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListIteratorV<'a, T> {
                 self.cur = *next.0.borrow(Tracked(points_to));
                 Some(res)
             },
-            None => {
-                proof {
-                    assert(self.index@ + 1 == ghost_state@.cells.len());
-                    assert(ghost_state@.points_to_map.dom().contains(self.index@));
-                    assert(ghost_state@.points_to_map[self.index@].is_init());
-                    assert(ghost_state@.points_to_map[self.index@].id()
-                        == ghost_state@.cells[self.index@ as int].id());
-                }
-
-                None
-            },
+            None => { None },
         }
     }
 
@@ -239,12 +218,12 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
         &&& forall|i: nat|
             0 <= i < ghost_state@.cells.len() ==>
             #[trigger] ghost_state@.points_to_map.dom().contains(i)
-        // &&& forall|i: nat|
-        //     0 <= i < ghost_state@.cells.len() ==>
-        //     #[trigger] ghost_state@.points_to_map[i].is_init()
-    //     &&& forall|i: nat|
-    //         0 <= i < ghost_state@.cells.len() ==>
-    //         #[trigger] ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id()
+        &&& forall|i: nat|
+            0 <= i < ghost_state@.cells.len() ==>
+            #[trigger] ghost_state@.points_to_map[i].is_init()
+        &&& forall|i: nat|
+            0 <= i < ghost_state@.cells.len() ==>
+            #[trigger] ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id()
     }
 
     /// Well formed list implies every node is well formed
@@ -261,8 +240,8 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             ),
     { }
 
-    pub closed spec fn lemma_temp2(&self, ghost_state: &Tracked<GhostState<'a, T>>) -> bool
-    { false }
+    // pub closed spec fn lemma_temp2(&self, ghost_state: &Tracked<GhostState<'a, T>>) -> bool
+    // { false }
 
     pub const fn new() -> (res: (Self, Tracked<GhostState<'a, T>>))
         ensures
@@ -313,13 +292,6 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
         ensures
             old(ghost_state)@.cells.len() + 1 == ghost_state@.cells.len(),
             self.well_formed_list(ghost_state),
-            // not sure why this is needed as it should be included in well_formed_list
-            // but removing it will cause subsequent calls not verified
-            forall|i: nat|
-                0 <= i < ghost_state@.cells.len()
-                    ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
-                    && ghost_state@.points_to_map[i].is_init()
-                    && ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id(),
 
             ghost_state@.points_to_map[0].value().unwrap() == node,
             forall|i: nat|
@@ -329,17 +301,11 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
                     + 1].value().unwrap(),
     {
         proof {
-            // This assert and the commented out should be the same. In fact, lemma_temp
-            // already shows well_formed_list implies well_formed_node.
             assert(forall|i: nat|
-            0 <= i < ghost_state@.cells.len()-2 ==> #[trigger] well_formed_node(
+            0 <= i < ghost_state@.cells.len() ==> #[trigger] well_formed_node(
                 ghost_state,
                 i,
             ));
-            // assert(forall|i: nat|
-            //     0 <= i < ghost_state@.cells.len() && well_formed_node(ghost_state, i) ==> #[trigger] ghost_state@.points_to_map[i].is_init());
-            // assert(forall|i: nat|
-            //     0 <= i < ghost_state@.cells.len() && well_formed_node(ghost_state, i) ==> #[trigger] ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id());
         }
         let tracked mut head_points_to = ghost_state.borrow_mut().points_to_map.tracked_remove(0);
         let old_head_value = *self.head.0.borrow(Tracked(&head_points_to));
@@ -400,16 +366,6 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
         ensures
             old(ghost_state)@.cells.len() + 1 == ghost_state@.cells.len(),
             self.well_formed_list((ghost_state)),
-            // old(ghost_state)@.cells[0].id() == self.head.0.id(),
-            // ghost_state@.cells[0].id() == self.head.0.id(),
-            // self.well_formed_list(ghost_state),
-            // not sure why this is needed as it should be included in well_formed_list
-            // but removing it will cause subsequent calls not verified
-            forall|i: nat|
-                0 <= i < ghost_state@.cells.len()
-                    ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
-                    && ghost_state@.points_to_map[i].is_init()
-                    && ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id(),
             ghost_state@.points_to_map[(ghost_state@.cells.len() - 2) as nat].value().unwrap()
                 == node,
             forall|i: nat|
@@ -460,7 +416,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
                         (ghost_state@.cells.len() - 1) as nat,
                         next_ptr,
                     );
-                    // need to reestablisht that the list is well formed after mutating it. Prove that the last item in the list preserves the list properties
+                    // need to reestablish that the list is well formed after mutating it. Prove that the last item in the list preserves the list properties
                     assert(ghost_state@.cells.len() >= 1);
                     assert(well_formed_node(ghost_state, (ghost_state@.cells.len() - 2) as nat));
                     assert(well_formed_node(ghost_state, (ghost_state@.cells.len() - 1) as nat));
@@ -506,15 +462,6 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             old(ghost_state)@.cells[0].id() == self.head.0.id(),
         ensures
             self.well_formed_list(ghost_state),
-            // ghost_state@.cells[0].id() == self.head.0.id(),
-            // not sure why this is needed as it should be included in well_formed_list
-            // but removing it will cause subsequent calls not verified
-            forall|i: nat|
-                0 <= i < ghost_state@.cells.len()
-                    ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
-                    && ghost_state@.points_to_map[i].is_init() && ghost_state@.points_to_map[i].id()
-                    == ghost_state@.cells[i as int].id()
-                ,
             if old(ghost_state)@.cells.len() == 1 {
                 old(ghost_state)@.cells.len() == ghost_state@.cells.len()
             } else {
@@ -602,11 +549,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
     // list length = cells length - 1 (last cell contains None)
 
             ghost_state@.cells.len() >= 1,
-            forall|i: nat|
-                0 <= i < ghost_state@.cells.len()
-                    ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
-                    && ghost_state@.points_to_map[i].is_init() && ghost_state@.points_to_map[i].id()
-                    == ghost_state@.cells[i as int].id(),
+            self.well_formed_list(ghost_state),
             // every cell except the last one should not be None
             forall|i: nat|
                 0 <= i < (ghost_state@.cells.len() - 1) as nat
