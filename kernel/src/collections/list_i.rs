@@ -54,56 +54,6 @@ pub open spec fn well_formed_node<'a, T: 'a + ?Sized + ListNodeV<'a, T>>(
     &&& ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id()
 }
 
-// move to inside scope, need to be in impl. lemma move inside impl
-// says all the ghost state corresponds to the listnodes. it's a linked list so I guess it unrolls the loop all the way down to establish all the maps are right
-pub open spec fn well_formed_list_out<'a, T: ?Sized + ListNodeV<'a, T>>(ghost_state: &Tracked<GhostState<'a, T>>) -> bool {
-    // list length = cells length - 1 (the last cell contains None)
-    &&& ghost_state@.cells.len() >= 1
-    &&& forall|i: nat|
-        0 <= i < ghost_state@.cells.len() ==> well_formed_node(
-            ghost_state,
-            i,
-        )
-    // every cell except the last one should not be None
-    &&& forall|i: nat|
-        0 <= i < (ghost_state@.cells.len() - 1) as nat
-            ==> match #[trigger] ghost_state@.points_to_map[i].value() {
-            Option::Some(_) => true,
-            Option::None => false,
-        }
-        // the last cell contains None
-    &&& match ghost_state@.points_to_map[(ghost_state@.cells.len() - 1) as nat].value() {
-        Option::Some(_) => false,
-        Option::None => true,
-    }
-    &&& ghost_state@.points_to_map.dom().contains((ghost_state@.cells.len() - 1) as nat)
-    // &&& ghost_state@.cells[0].id() == self.head.0.id() // TODO: this property is needed
-    &&& ghost_state@.cells[0].id() == ghost_state@.points_to_map[0].id() // should be same as above
-    &&& forall|i: nat|
-        0 <= i < ghost_state@.cells.len() ==>
-        #[trigger] ghost_state@.points_to_map.dom().contains(i)
-    // &&& forall|i: nat|
-    //     0 <= i < ghost_state@.cells.len() ==>
-    //     #[trigger] ghost_state@.points_to_map[i].is_init()
-//     &&& forall|i: nat|
-//         0 <= i < ghost_state@.cells.len() ==>
-//         #[trigger] ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id()
-}
-
-/// Well formed list implies every node is well formed
-/// NOTE: cannot broadcast this due to verus panic https://github.com/verus-lang/verus/issues/1561
-pub proof fn lemma_temp<'a, T: ?Sized + ListNodeV<'a, T>>(ghost_state: &mut Tracked<GhostState<'a, T>>)
-    requires
-        #[trigger] well_formed_list_out(old(ghost_state)),
-    ensures
-        // all nodes well formed
-        forall|i: nat|
-        0 <= i < #[trigger] ghost_state@.cells.len() ==> #[trigger] well_formed_node(
-                ghost_state,
-            i,
-        )
-{ }
-
 impl<'a, T: ?Sized + ListNodeV<'a, T>> ListIteratorV<'a, T> {
     pub closed spec fn valid_list_iterator(
         &self,
@@ -273,8 +223,16 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListIteratorV<'a, T> {
 }
 
 impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
+// move to inside scope, need to be in impl. lemma move inside impl
+// says all the ghost state corresponds to the listnodes. it's a linked list so I guess it unrolls the loop all the way down to establish all the maps are right
+// pub open spec fn well_formed_list_out<'a, T: ?Sized + ListNodeV<'a, T>>(ghost_state: &Tracked<GhostState<'a, T>>) -> bool {
     // https://github.com/verus-lang/verus/blob/4e32f3ab2b23b28194857126330662642f7d5e2e/source/rust_verify/example/doubly_linked.rs#L56
     // https://github.com/microsoft/verismo/blob/a120c4576b4969d4575f34b266128c9f7c823fd2/source/verismo/src/linkedlist/mod.rs#L143
+    pub closed spec fn lemma_temp1(&self, ghost_state: &Tracked<GhostState
+<'a, T>>) -> bool
+    {
+        true
+    }
     pub open spec fn well_formed_list(&self, ghost_state: &Tracked<GhostState<'a, T>>) -> bool {
         // list length = cells length - 1 (the last cell contains None)
         &&& ghost_state@.cells.len() >= 1
@@ -307,6 +265,21 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
     //         0 <= i < ghost_state@.cells.len() ==>
     //         #[trigger] ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id()
     }
+
+
+/// Well formed list implies every node is well formed
+/// NOTE: cannot broadcast this due to verus panic https://github.com/verus-lang/verus/issues/1561
+// pub proof fn lemma_temp<T: ?Sized + ListNodeV<'a, T>>(&self, ghost_state: &mut Tracked<GhostState<'a, T>>)
+//     requires
+//         #[trigger] well_formed_list(old(ghost_state)),
+//     ensures
+//         // all nodes well formed
+//         forall|i: nat|
+//         0 <= i < #[trigger] ghost_state@.cells.len() ==> #[trigger] well_formed_node(
+//                 ghost_state,
+//             i,
+//         )
+// { }
 
     pub const fn new() -> (res: (Self, Tracked<GhostState<'a, T>>))
         ensures
@@ -355,8 +328,8 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
     // VERUS-TODO manually inlined due to errors (`a mutable reference is expected here`) when using `self.well_formed_list(old(ghost_state))`.
     // list length = cells length - 1 (last cell contains None)
 
-            well_formed_list_out(old(ghost_state)),
-            old(ghost_state)@.cells[0].id() == self.head.0.id(),
+            self.well_formed_list(old(ghost_state)),
+            // old(ghost_state)@.cells[0].id() == self.head.0.id(),
             // old(ghost_state)@.cells.len() >= 1,
             // forall|i: nat|
             //     0 <= i < old(ghost_state)@.cells.len()
@@ -381,8 +354,8 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             next_points_to@.is_init(),
         ensures
             old(ghost_state)@.cells.len() + 1 == ghost_state@.cells.len(),
-            well_formed_list_out(ghost_state) && ghost_state@.cells[0].id() == self.head.0.id(),
-            old(ghost_state)@.cells[0].id() == self.head.0.id(),
+            self.well_formed_list(ghost_state), // && ghost_state@.cells[0].id() == self.head.0.id(),
+            // old(ghost_state)@.cells[0].id() == self.head.0.id(),
             // not sure why this is needed as it should be included in well_formed_list
             // but removing it will cause subsequent calls not verified
 
@@ -527,8 +500,8 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
     // list length = cells length - 1 (last cell contains None)
 
             old(ghost_state)@.cells.len() >= 1,
-            well_formed_list_out(old(ghost_state)),
-            old(ghost_state)@.cells[0].id() == self.head.0.id(),
+            self.well_formed_list(old(ghost_state)),
+            // old(ghost_state)@.cells[0].id() == self.head.0.id(),
             // self.well_formed_list(old(ghost_state)), // TODO: need to debug why I cannot say only something like this
             forall|i: nat|
                 0 <= i < old(ghost_state)@.cells.len() ==> #[trigger] old(
@@ -556,17 +529,17 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             // old(node)@.is_init(),
         ensures
             old(ghost_state)@.cells.len() + 1 == ghost_state@.cells.len(),
-            well_formed_list_out(old(ghost_state)),
-            old(ghost_state)@.cells[0].id() == self.head.0.id(),
-            ghost_state@.cells[0].id() == self.head.0.id(),
+            self.well_formed_list((ghost_state)),
+            // old(ghost_state)@.cells[0].id() == self.head.0.id(),
+            // ghost_state@.cells[0].id() == self.head.0.id(),
             // self.well_formed_list(ghost_state),
             // not sure why this is needed as it should be included in well_formed_list
             // but removing it will cause subsequent calls not verified
             forall|i: nat|
                 0 <= i < ghost_state@.cells.len()
-                    ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
+                    ==> #[trigger] ghost_state@.points_to_map.dom().contains(i),
                     // && ghost_state@.points_to_map[i].is_init()
-                    && ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id(),
+                    // && ghost_state@.points_to_map[i].id() == ghost_state@.cells[i as int].id(),
             ghost_state@.points_to_map[(ghost_state@.cells.len() - 2) as nat].value().unwrap()
                 == node,
             forall|i: nat|
@@ -677,7 +650,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             old(ghost_state)@.cells[0].id() == self.head.0.id(),
         ensures
             self.well_formed_list(ghost_state),
-            ghost_state@.cells[0].id() == self.head.0.id(),
+            // ghost_state@.cells[0].id() == self.head.0.id(),
             // not sure why this is needed as it should be included in well_formed_list
             // but removing it will cause subsequent calls not verified
             forall|i: nat|
@@ -861,62 +834,62 @@ fn main() {
         assert(next_2.is_none());
     }
 
-    // // example: push and pop
-    // {
-    //     let (mut list, mut state) = ListV::<I32Node>::new();
-    //     let (a, a_pt) = I32Node::new(1);
-    //     let (b, b_pt) = I32Node::new(2);
-    //     list.push_head(&a, a_pt, &mut state);
-    //     list.push_tail(&b, b_pt, &mut state);
-    //     list.pop_head(&mut state);
-    //     let mut it = list.iter(&state);
-    //     let next_1 = it.next(&state);
-    //     assert(next_1.is_some());
-    //     assert(next_1.unwrap().value == 2);
-    //     let next_2 = it.next(&state);
-    //     assert(next_2.is_none());
-    // }
+    // example: push and pop
+    {
+        let (mut list, mut state) = ListV::<I32Node>::new();
+        let (a, a_pt) = I32Node::new(1);
+        let (b, b_pt) = I32Node::new(2);
+        list.push_head(&a, a_pt, &mut state);
+        list.push_tail(&b, b_pt, &mut state);
+        list.pop_head(&mut state);
+        let mut it = list.iter(&state);
+        let next_1 = it.next(&state);
+        assert(next_1.is_some());
+        assert(next_1.unwrap().value == 2);
+        let next_2 = it.next(&state);
+        assert(next_2.is_none());
+    }
 
-    // // example: empty list
-    // {
-    //     let (mut list, mut state) = ListV::<I32Node>::new();
-    //     let (a, a_pt) = I32Node::new(1);
-    //     let (b, b_pt) = I32Node::new(2);
-    //     list.push_tail(&b, b_pt, &mut state);
-    //     list.push_head(&a, a_pt, &mut state);
-    //     list.pop_head(&mut state);
-    //     list.pop_head(&mut state);
-    //     let mut it = list.iter(&state);
-    //     let next_1 = it.next(&state);
-    //     assert(next_1.is_none());
-    // }
+    // example: empty list
+    {
+        let (mut list, mut state) = ListV::<I32Node>::new();
+        let (a, a_pt) = I32Node::new(1);
+        let (b, b_pt) = I32Node::new(2);
+        list.push_tail(&b, b_pt, &mut state);
+        list.push_head(&a, a_pt, &mut state);
+        list.pop_head(&mut state);
+        list.pop_head(&mut state);
+        let mut it = list.iter(&state);
+        let next_1 = it.next(&state);
+        assert(next_1.is_none());
+    }
 
-    // // example: iterator
-    // {
-    //     let (mut list, mut state) = ListV::<I32Node>::new();
-    //     let (a, a_pt) = I32Node::new(1);
-    //     let (b, b_pt) = I32Node::new(2);
-    //     let (c, c_pt) = I32Node::new(3);
-    //     list.push_head(&a, a_pt, &mut state);
-    //     list.push_tail(&b, b_pt, &mut state);
-    //     list.push_head(&c, c_pt, &mut state);
-    //     let mut it = list.iter(&state);
-    //     let next_1 = it.next(&state);
-    //     assert(next_1.is_some());
-    //     assert(next_1.unwrap().value == 3);
-    //     let next_2 = it.next(&state);
-    //     assert(next_2.is_some());
-    //     assert(next_2.unwrap().value == 1);
-    //     let next_3 = it.next(&state);
-    //     assert(next_3.is_some());
-    //     assert(next_3.unwrap().value == 2);
-    //     let next_4 = it.next(&state);
-    //     assert(next_4.is_none());
-    //     let mut it2 = list.iter(&state);
-    //     let last = it2.last(&state);
-    //     assert(last.is_some());
-    //     assert(last.unwrap().value == 2);
-    //  }
+    // example: iterator
+    {
+        let (mut list, mut state) = ListV::<I32Node>::new();
+        let (a, a_pt) = I32Node::new(1);
+        let (b, b_pt) = I32Node::new(2);
+        let (c, c_pt) = I32Node::new(3);
+        list.push_head(&a, a_pt, &mut state);
+        list.push_tail(&b, b_pt, &mut state);
+        list.push_head(&c, c_pt, &mut state);
+        let mut it = list.iter(&state);
+        let next_1 = it.next(&state);
+        assert(next_1.is_some());
+        assert(next_1.unwrap().value == 3);
+        let next_2 = it.next(&state);
+        assert(next_2.is_some());
+        assert(next_2.unwrap().value == 1);
+        let next_3 = it.next(&state);
+        assert(next_3.is_some());
+        assert(next_3.unwrap().value == 2);
+        let next_4 = it.next(&state);
+        assert(next_4.is_none());
+        let mut it2 = list.iter(&state);
+        let last = it2.last(&state);
+        assert(last.is_some());
+        assert(last.unwrap().value == 2);
+     }
 }
 
 } // verus!
