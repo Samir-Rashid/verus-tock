@@ -60,6 +60,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListIteratorV<'a, T> {
         ghost_state: &Tracked<GhostState<'a, T>>,
     ) -> bool {
         &&& ghost_state@.cells.len() > self.index@
+        // use lemma here
         &&& forall|i: nat|
             self.index@ <= i < ghost_state@.cells.len()
                 ==> #[trigger] ghost_state@.points_to_map.dom().contains(i)
@@ -158,7 +159,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListIteratorV<'a, T> {
         let mut last = None;
         assert(old(self).index@ == self.index@);
         loop
-            invariant_except_break
+            invariant_except_break // TODO: look at this and minimize it. nasty.
                 self.valid_list_iterator(ghost_state),
                 match last {
                     Option::Some(_) => ghost_state@.points_to_map.dom().contains(
@@ -228,17 +229,17 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
 
     /// Well formed list implies every node is well formed
     /// NOTE: cannot broadcast this due to verus panic https://github.com/verus-lang/verus/issues/1561
-    pub proof fn lemma_temp(&self, ghost_state: &mut Tracked<GhostState<'a, T>>)
-        requires
-            #[trigger] self.well_formed_list(old(ghost_state)),
-        ensures
-            // all nodes well formed
-            forall|i: nat|
-            0 <= i < #[trigger] ghost_state@.cells.len() ==> #[trigger] well_formed_node(
-                    ghost_state,
-                i,
-            ),
-    { }
+    // pub proof fn lemma_temp(&self, ghost_state: &mut Tracked<GhostState<'a, T>>)
+    //     requires
+    //         #[trigger] self.well_formed_list(old(ghost_state)),
+    //     ensures
+    //         // all nodes well formed
+    //         forall|i: nat|
+    //         0 <= i < #[trigger] ghost_state@.cells.len() ==> #[trigger] well_formed_node(
+    //                 ghost_state,
+    //             i,
+    //         ),
+    // { }
 
     // pub closed spec fn lemma_temp2(&self, ghost_state: &Tracked<GhostState<'a, T>>) -> bool
     // { false }
@@ -294,19 +295,13 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             self.well_formed_list(ghost_state),
 
             ghost_state@.points_to_map[0].value().unwrap() == node,
+            // TODO: minimize this, why is it needed
             forall|i: nat|
                 0 <= i < (old(ghost_state)@.cells.len() - 1) as nat ==> #[trigger] old(
                     ghost_state,
                 )@.points_to_map[i].value().unwrap() == ghost_state@.points_to_map[i
                     + 1].value().unwrap(),
     {
-        proof {
-            assert(forall|i: nat|
-            0 <= i < ghost_state@.cells.len() ==> #[trigger] well_formed_node(
-                ghost_state,
-                i,
-            ));
-        }
         let tracked mut head_points_to = ghost_state.borrow_mut().points_to_map.tracked_remove(0);
         let old_head_value = *self.head.0.borrow(Tracked(&head_points_to));
         let tracked mut next_ptr = next_points_to.get();
@@ -339,6 +334,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
             old(ghost_state)@.cells.len() >= 1,
             // this should be enough
             self.well_formed_list(old(ghost_state)),
+            // TODO: minimize
             forall|i: nat|
                 0 <= i < old(ghost_state)@.cells.len() ==> #[trigger] old(
                     ghost_state,
@@ -595,6 +591,8 @@ impl<'a> I32Node<'a> {
     }
 }
 
+// TODO: this trusted code needs to be removed. Assumes you never reach the
+// dummy node. Make the type terminate.
 #[verifier::external]
 impl<'a> ListNodeV<'a, I32Node<'a>> for I32Node<'a> {
     fn next(&'a self, next_points_to: Tracked<&PointsTo<Option<&'a I32Node<'a>>>>) -> (res:
