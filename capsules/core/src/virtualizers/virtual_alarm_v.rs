@@ -341,9 +341,11 @@ impl<'a, A: Alarm<'a>> AlarmClient<'a, A> for VirtualMuxAlarm<'a, A> {
 /// Structure to control a set of virtual alarms multiplexed together on top of a single alarm.
 #[verifier::reject_recursive_types(A)]
 // #[verifier::accept_recursive_types(A)]
-pub struct MuxAlarm<'a, A: Alarm<'a>> {
+pub struct MuxAlarm<'a, A: Alarm<'a>> { // TODO: define an alarm implementation, make the toy programs at the end like in linked list for what you should be able to know statically. can do things with mux alarm after alarm. all the alarms wshould be in order, num armed == num enabled.
+    //
     /// Head of the linked list of virtual alarms multiplexed together.
-    pub virtual_alarms: Option<ListV<'a, VirtualMuxAlarm<'a, A>>>,
+    pub virtual_alarms: Option<ListV<'a, VirtualMuxAlarm<'a, A>>>, // TODO: why is this recursive? Find the sorted def from github summer school forall pairs
+    // this is like a lazy mergesort, but the time is bounded and costs are limited per proc
     /// Number of virtual alarms that are currently enabled.
     pub enabled: PCell<usize>,
     /// Underlying alarm, over which the virtual alarms are multiplexed.
@@ -489,6 +491,7 @@ impl<'a, A: Alarm<'a>> AlarmClient<'a, A> for MuxAlarm<'a, A> {
         //     .iter()
         //     .filter(|cur| cur.armed.get())
         //     .min_by_key(|cur| {
+        // TODO: this now > ref assumption does not seem sound
         //         let when = cur.dt_reference.get();
         //         // If the alarm has already expired, then it should be
         //         // considered as the earliest possible (0 ticks), so it

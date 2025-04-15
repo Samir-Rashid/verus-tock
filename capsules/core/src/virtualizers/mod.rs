@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2023.
 
+pub mod new_virtual_alarm;
 pub mod virtual_adc;
 pub mod virtual_aes_ccm;
 pub mod virtual_alarm;
