@@ -13,7 +13,8 @@ use vstd::prelude::*;
 
 /// Syscall driver number.
 use crate::driver;
-use crate::virtualizers::virtual_alarm_v::{Alarm, AlarmClient, MuxAlarmState};
+// use crate::virtualizers::virtual_alarm_v::{Alarm, AlarmClient, MuxAlarmState};
+use crate::virtualizers::virtual_alarm::{Alarm, AlarmClient, MuxAlarmState};
 // use crate::virtualizers::new_virtual_alarm::{Alarm, AlarmClient, MuxAlarmState};
 pub const DRIVER_NUM: usize = driver::NUM::Alarm as usize;
 

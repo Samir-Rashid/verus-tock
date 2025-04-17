@@ -189,16 +189,16 @@ pub fn Exset<T>(cell: &Cell<T>, val: T) {
     cell.set(val)
 }
 
-// #[verifier::external_type_specification]
-// #[verifier::external_body]
-// #[verifier::reject_recursive_types(T)]
-// // VERUS-TODO: Verify the OptionnalCell type
-// pub struct ExOptionalCell<T>(OptionalCell<T>);
+#[verifier::external_type_specification]
+#[verifier::external_body]
+#[verifier::reject_recursive_types(T)]
+// VERUS-TODO: Verify the OptionnalCell type
+pub struct ExOptionalCell<T>(OptionalCell<T>);
 
-// #[verifier::external_fn_specification]
-// pub const fn ExOptionalCellempty<T>() -> OptionalCell<T> {
-//     OptionalCell::empty()
-// }
+#[verifier::external_fn_specification]
+pub const fn ExOptionalCellempty<T>() -> OptionalCell<T> {
+    OptionalCell::empty()
+}
 
 // #[verifier::external_fn_specification]
 // pub fn ExOptionalCellMap<T: Copy, F, R>(optcell: &OptionalCell<T>, closure: F) -> Option<R> where
