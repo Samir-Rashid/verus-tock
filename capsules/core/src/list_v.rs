@@ -613,7 +613,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListV<'a, T> {
 }
 
 // example of ListNodeV containing i32
-struct I32Node<'a> {
+pub struct I32Node<'a> {
     pub value: i32,
     pub next: Option<ListLinkV<'a, I32Node<'a>>>,
 }
