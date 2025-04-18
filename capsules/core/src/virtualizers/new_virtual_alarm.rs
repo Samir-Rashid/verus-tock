@@ -19,37 +19,79 @@ use core::fmt;
 use kernel::ErrorCode;
 // spec_saturating_sub
 
+use kernel::collections::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
 use kernel::hil::time::{ex_saturatingsub, ExErrorCode, ExOrdering};
+use vstd::cell::*;
+// use kernel::hil::time::{Ticks, Time};
 use vstd::prelude::*;
 
 verus! {
+#[derive(Copy, Clone)]
+struct TickDtReference<T: Ticks> {
+    /// Reference time point when this alarm was setup.
+    reference: T,
+    /// Duration of this alarm w.r.t. the reference time point. In other words, this alarm should
+    /// fire at `reference + dt`.
+    dt: T,
+    /// True if this dt only represents a portion of the original dt that was requested. If true,
+    /// then we need to wait for another max_tick/2 after an internal extended dt reference alarm
+    /// fires. This ensures we can wait the full max_tick even if there is latency in the system.
+    extended: bool,
+}
 
 /// Structure to control a set of virtual alarms multiplexed together on top of a single alarm.
-#[verifier::reject_recursive_types(A)]
+// #[verifier::reject_recursive_types(A)]
 pub struct MuxAlarm<'a, A: Alarm<'a>> {
     /// Head of the linked list of virtual alarms multiplexed together.
-    virtual_alarms: List<'a, VirtualMuxAlarm<'a, A>>,
+    // virtual_alarms: ListV<'a, VirtualMuxAlarm<'a, A>>, // TODO:
     /// Number of virtual alarms that are currently enabled.
-    enabled: Cell<usize>,
+    enabled: PCell<usize>, // TODO: determine why this is a cell
     /// Underlying alarm, over which the virtual alarms are multiplexed.
     alarm: &'a A,
     /// Whether we are firing; used to delay restarted alarms
-    firing: Cell<bool>,
+    firing: PCell<bool>,
     /// Reference to next alarm
-    next_tick_vals: Cell<Option<(A::Ticks, A::Ticks)>>,
+    next_tick_vals: PCell<Option<(A::Ticks, A::Ticks)>>,
+}
+
+// Keep track of the single, real, physical alarm.
+pub tracked struct MuxAlarmState<'a, A: Alarm<'a>> {
+    /// Head of the linked list of virtual alarms multiplexed together.
+    // virtual_alarms: ListV<'a, VirtualMuxAlarm<'a, A>>, // TODO:
+    /// Number of virtual alarms that are currently enabled.
+    enabled: Tracked<PointsTo<usize>>,
+    /// Underlying alarm, over which the virtual alarms are multiplexed.
+    alarm: &'a A,
+    /// Whether we are firing; used to delay restarted alarms
+    firing: Tracked<PointsTo<bool>>,
+    /// Reference to next alarm
+    next_tick_vals: Tracked<PointsTo<Option<(A::Ticks, A::Ticks)>>>,
 }
 
 impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
-    pub const fn new(alarm: &'a A) -> MuxAlarm<'a, A> {
-        MuxAlarm {
-            virtual_alarms: List::new(),
-            enabled: Cell::new(0),
+    pub const fn new(alarm: &'a A) -> (MuxAlarm<'a, A>, MuxAlarmState<'a, A>) {
+        let (enabled , enabled_perm) = PCell::new(1);
+        let (firing , firing_perm) = PCell::new(true);
+        let (next_tick_vals , next_tick_vals_perm) = PCell::new(None);
+
+        (MuxAlarm {
+            // virtual_alarms: ListV::new(), // TODO:
+            enabled: enabled,
             alarm,
-            firing: Cell::new(false),
-            next_tick_vals: Cell::new(None),
-        }
+            firing: firing,
+            next_tick_vals: next_tick_vals,
+        },
+        MuxAlarmState {
+            // virtual_alarms: ListV::new(), // TODO:
+            enabled: enabled_perm,
+            alarm,
+            firing: firing_perm,
+            next_tick_vals: next_tick_vals_perm,
+
+        })
     }
 
+    // PRECONDITION: can only be sooner or if disabled
     pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks) {
         self.next_tick_vals.set(Some((reference, dt)));
         self.alarm.set_alarm(reference, dt);
@@ -61,111 +103,113 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
     }
 }
 
-impl<'a, A: Alarm<'a>> time::AlarmClient for MuxAlarm<'a, A> {
+// TODO: empty out the impl and verify
+impl<'a, A: Alarm<'a>> AlarmClient for MuxAlarm<'a, A> {
     /// When the underlying alarm has fired, we have to multiplex this event back to the virtual
     /// alarms that should now fire.
     fn alarm(&self) {
-        // Check whether to fire each alarm. At this level, alarms are one-shot,
-        // so a repeating client will set it again in the alarm() callback.
-        self.firing.set(true);
-        let mut iterator = ListIterator { cur: self.virtual_alarms.head() };
-        // for cur in self.virtual_alarms.iter() {
-        // while let Some(cur) = current {
-        loop {
-            match iterator.next() {
-                Some(cur) => {
-                    let dt_ref = cur.dt_reference.get();
-                    let now = self.alarm.now();
-                    if cur.armed.get() && !now.within_range(
-                        dt_ref.reference,
-                        dt_ref.reference_plus_dt(),
-                    ) {
-                        if dt_ref.extended {
-                            cur.dt_reference.set(
-                                TickDtReference {
-                                    reference: dt_ref.reference_plus_dt(),
-                                    dt: A::Ticks::half_max_value(),
-                                    extended: false,
-                                },
-                            );
-                        } else {
-                            cur.armed.set(false);
-                            // VERUS-TODO uncomment the following line and prove the lack of overflow
-                            // self.enabled.set(self.enabled.get() - 1);
-                            cur.alarm();
-                        }
-                    }
-                },
-                None => break ,
-            }
-            // let mut current = self.virtual_alarms.head();
+        // // Check whether to fire each alarm. At this level, alarms are one-shot,
+        // // so a repeating client will set it again in the alarm() callback.
+        // self.firing.set(true);
+        // let mut iterator = ListIteratorV { cur: self.virtual_alarms.head() };
+        // // for cur in self.virtual_alarms.iter() {
+        // // while let Some(cur) = current {
+        // loop {
+        //     match iterator.next() {
+        //         Some(cur) => {
+        //             let dt_ref = cur.dt_reference.get();
+        //             let now = self.alarm.now();
+        //             if cur.armed.get() && !now.within_range(
+        //                 dt_ref.reference,
+        //                 dt_ref.reference_plus_dt(),
+        //             ) {
+        //                 if dt_ref.extended {
+        //                     cur.dt_reference.set(
+        //                         TickDtReference {
+        //                             reference: dt_ref.reference_plus_dt(),
+        //                             dt: A::Ticks::half_max_value(),
+        //                             extended: false,
+        //                         },
+        //                     );
+        //                 } else {
+        //                     cur.armed.set(false);
+        //                     // VERUS-TODO uncomment the following line and prove the lack of overflow
+        //                     // self.enabled.set(self.enabled.get() - 1);
+        //                     cur.alarm();
+        //                 }
+        //             }
+        //         },
+        //         None => break ,
+        //     }
+        //     // let mut current = self.virtual_alarms.head();
 
-        }
-        self.firing.set(false);
-        // Find the soonest alarm client (if any) and set the "next" underlying
-        // alarm based on it.  This needs to happen after firing all expired
-        // alarms since those may have reset new alarms.
-        let now = self.alarm.now();
-        // let next = self
-        //     .virtual_alarms
-        //     .iter()
-        //     .filter(|cur| cur.armed.get())
-        //     .min_by_key(|cur| {
-        //         let when = cur.dt_reference.get();
-        //         // If the alarm has already expired, then it should be
-        //         // considered as the earliest possible (0 ticks), so it
-        //         // will trigger as soon as possible. This can happen
-        //         // if the alarm expired *after* it was examined in the
-        //         // above loop.
-        //         if !now.within_range(when.reference, when.reference_plus_dt()) {
-        //             A::Ticks::from(0u32)
-        //         } else {
-        //             when.reference_plus_dt().wrapping_sub(now)
-        //         }
-        //     })
-        let mut iterator = ListIterator { cur: self.virtual_alarms.head() };
-        let mut min_ticks = None;
-        let mut min_alarm = None;
+        // }
+        // self.firing.set(false);
+        // // Find the soonest alarm client (if any) and set the "next" underlying
+        // // alarm based on it.  This needs to happen after firing all expired
+        // // alarms since those may have reset new alarms.
+        // let now = self.alarm.now();
+        // // let next = self
+        // //     .virtual_alarms
+        // //     .iter()
+        // //     .filter(|cur| cur.armed.get())
+        // //     .min_by_key(|cur| {
+        // //         let when = cur.dt_reference.get();
+        // //         // If the alarm has already expired, then it should be
+        // //         // considered as the earliest possible (0 ticks), so it
+        // //         // will trigger as soon as possible. This can happen
+        // //         // if the alarm expired *after* it was examined in the
+        // //         // above loop.
+        // //         if !now.within_range(when.reference, when.reference_plus_dt()) {
+        // //             A::Ticks::from(0u32)
+        // //         } else {
+        // //             when.reference_plus_dt().wrapping_sub(now)
+        // //         }
+        // //     })
+        // let mut iterator = ListIteratorV { cur: self.virtual_alarms.head() };
+        // let mut min_ticks = None;
+        // let mut min_alarm = None;
 
-        loop {
-            match iterator.next() {
-                Some(cur) => {
-                    if cur.armed.get() {
-                        let when = cur.dt_reference.get();
-                        let ticks = if !now.within_range(when.reference, when.reference_plus_dt()) {
-                            A::Ticks::from_or_max(0u64)
-                        } else {
-                            when.reference_plus_dt().wrapping_sub(now)
-                        };
+        // loop {
+        //     match iterator.next() {
+        //         Some(cur) => {
+        //             if cur.armed.get() {
+        //                 let when = cur.dt_reference.get();
+        //                 let ticks = if !now.within_range(when.reference, when.reference_plus_dt()) {
+        //                     A::Ticks::from_or_max(0u64)
+        //                 } else {
+        //                     when.reference_plus_dt().wrapping_sub(now)
+        //                 };
 
-                        match min_ticks {
-                            None => {
-                                min_ticks = Some(ticks);
-                                min_alarm = Some(cur);
-                            },
-                            Some(min) if ticks.into_usize() < min.into_usize() => {
-                                min_ticks = Some(ticks);
-                                min_alarm = Some(cur);
-                            },
-                            _ => {},
-                        }
-                    }
-                },
-                None => break ,
-            }
-        }
+        //                 match min_ticks {
+        //                     None => {
+        //                         min_ticks = Some(ticks);
+        //                         min_alarm = Some(cur);
+        //                     },
+        //                     Some(min) if ticks.into_usize() < min.into_usize() => {
+        //                         min_ticks = Some(ticks);
+        //                         min_alarm = Some(cur);
+        //                     },
+        //                     _ => {},
+        //                 }
+        //             }
+        //         },
+        //         None => break ,
+        //     }
+        // }
 
-        let next = min_alarm;
+        // let next = min_alarm;
 
-        // Set the alarm.
-        if let Some(valrm) = next {
-            let dt_reference = valrm.dt_reference.get();
-            self.set_alarm(dt_reference.reference, dt_reference.dt);
-        } else {
-            self.disarm();
-        }
+        // // Set the alarm.
+        // if let Some(valrm) = next {
+        //     let dt_reference = valrm.dt_reference.get();
+        //     self.set_alarm(dt_reference.reference, dt_reference.dt);
+        // } else {
+        //     self.disarm();
+        // }
     }
 }
+
 // pub(crate) open spec fn spec_saturating_sub(lhs: int, rhs: int) -> int {
 //     if lhs >= rhs {
 //         lhs - rhs
@@ -537,7 +581,7 @@ pub trait Alarm<'a>: Time {
     /// Specify the callback for when the counter reaches the alarm
     /// value. If there was a previously installed callback this call
     /// replaces it.
-    // fn set_alarm_client(&self, client: &'a AlarmDriver);
+    // fn set_alarm_client(&self, client: &'a AlarmDriver); // TODO: did i remove???
     /// Specify when the callback should be called and enable it. The
     /// callback will be enqueued when `Time::now() == reference + dt`. The
     /// callback itself may not run exactly at this time, due to delays.
