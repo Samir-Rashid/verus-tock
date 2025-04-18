@@ -288,7 +288,7 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
             let expiration = reference.wrapping_add(dt);
             if cur_alarm.within_range(reference, expiration) {
                 // VERUS-TODO: Check if it is equivalent to the previous impl
-                let next = *self.mux().next_tick_vals.borrow(Tracked(&state@.mux_alarm_state@.next_tick_vals_pt));
+                let next = *self.mux().next_tick_vals.borrow(Tracked(&state@.mux_alarm_state@.next_tick_vals_pt)); // TODO: I am rather confused because this value is literally wrong. It's not the next soonest alarm, it's the most recently added alarm.
                 let alarm_state = state@.mux_alarm_state;
                 if let Some((next_reference, next_dt)) = next {
                     if now.within_range(next_reference, next_reference.wrapping_add(next_dt)) {

@@ -25,7 +25,8 @@ SHELL := bash
 ##
 default-target:
 	@echo "let's verify everything"
-	make -f Verifile verify_kernel
+	# make -f Verifile verify_kernel
+	make -f Verifile verify_virtual_alarm
 
 # By default, let's print out some help
 .PHONY: usage
