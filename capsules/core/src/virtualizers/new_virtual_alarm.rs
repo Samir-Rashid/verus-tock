@@ -52,43 +52,45 @@ pub struct MuxAlarm<'a, A: Alarm<'a>> {
     firing: PCell<bool>,
     /// Reference to next alarm
     next_tick_vals: PCell<Option<(A::Ticks, A::Ticks)>>,
+    state: MuxAlarmState<'a, A>,
 }
 
 // Keep track of the single, real, physical alarm.
 pub tracked struct MuxAlarmState<'a, A: Alarm<'a>> {
-    /// Head of the linked list of virtual alarms multiplexed together.
-    // virtual_alarms: ListV<'a, VirtualMuxAlarm<'a, A>>, // TODO:
-    /// Number of virtual alarms that are currently enabled.
+    // TODO: need virtual alarms state and virtual alarms Seq
+
+    /// NUMBER of virtual alarms that are currently enabled.
     enabled: Tracked<PointsTo<usize>>,
     /// Underlying alarm, over which the virtual alarms are multiplexed.
     alarm: &'a A,
     /// Whether we are firing; used to delay restarted alarms
     firing: Tracked<PointsTo<bool>>,
-    /// Reference to next alarm
+    /// Reference to CURRENT ALARM ref and dt
     next_tick_vals: Tracked<PointsTo<Option<(A::Ticks, A::Ticks)>>>,
 }
 
 impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
+    // TODO: this should return a type, not a pair
     pub const fn new(alarm: &'a A) -> (MuxAlarm<'a, A>, MuxAlarmState<'a, A>) {
         let (enabled , enabled_perm) = PCell::new(1);
         let (firing , firing_perm) = PCell::new(true);
         let (next_tick_vals , next_tick_vals_perm) = PCell::new(None);
 
-        (MuxAlarm {
+        MuxAlarm {
             // virtual_alarms: ListV::new(), // TODO:
             enabled: enabled,
             alarm,
             firing: firing,
             next_tick_vals: next_tick_vals,
-        },
-        MuxAlarmState {
-            // virtual_alarms: ListV::new(), // TODO:
-            enabled: enabled_perm,
-            alarm,
-            firing: firing_perm,
-            next_tick_vals: next_tick_vals_perm,
+            state: MuxAlarmState {
+                // virtual_alarms: ListV::new(), // TODO:
+                enabled: enabled_perm,
+                alarm,
+                firing: firing_perm,
+                next_tick_vals: next_tick_vals_perm,
 
-        })
+            },
+        }
     }
 
     // PRECONDITION: can only be sooner or if disabled
@@ -107,6 +109,7 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
 impl<'a, A: Alarm<'a>> AlarmClient for MuxAlarm<'a, A> {
     /// When the underlying alarm has fired, we have to multiplex this event back to the virtual
     /// alarms that should now fire.
+    // TODO: the buffer that we need to handle may not be bounded here? There can
     fn alarm(&self) {
         // // Check whether to fire each alarm. At this level, alarms are one-shot,
         // // so a repeating client will set it again in the alarm() callback.
@@ -590,6 +593,9 @@ pub trait Alarm<'a>: Time {
     /// and `dt` rather than a single value denoting the counter value so it
     /// can distinguish between alarms which have very recently already
     /// passed and those in the far far future (see #1651).
+    // PRECONDITION: current alarm is soonest
+    // POSTCONDITION: current alarm is soonest
+    // TODO: add asserts in the code and show that we want to show are met
     fn set_alarm(&self, reference: Self::Ticks, dt: Self::Ticks);
 
     /// Return the current alarm value. This is undefined at boot and
@@ -1130,4 +1136,6 @@ mod tests {
 
     // write dummy negative tests
     // write dummy positive tests
+
+    // TODO: 3 test cases which correspond to the three overlapping cases. past/future/present
 }
