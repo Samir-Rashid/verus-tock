@@ -18,7 +18,7 @@ use crate::virtualizers::virtual_alarm::{Alarm, AlarmClient, MuxAlarmState};
 // use crate::virtualizers::new_virtual_alarm::{Alarm, AlarmClient, MuxAlarmState};
 pub const DRIVER_NUM: usize = driver::NUM::Alarm as usize;
 
-// verus! {
+verus! {
 
 #[derive(Copy, Clone, Debug)]
 struct Expiration<T: Ticks> {
@@ -486,7 +486,7 @@ impl<'a, A: Alarm<'a>> AlarmDriver<'a, A> {
             .into_u32_left_justified()
     }
 }
-// }
+}
 
 impl<'a, A: Alarm<'a>> SyscallDriver for AlarmDriver<'a, A> {
     /// Setup and read the alarm.

@@ -5,7 +5,7 @@
 pub mod new_virtual_alarm;
 pub mod virtual_adc;
 pub mod virtual_aes_ccm;
-// pub mod virtual_alarm;
+pub mod virtual_alarm;
 // pub mod virtual_alarm_v;
 pub mod virtual_flash;
 pub mod virtual_i2c;

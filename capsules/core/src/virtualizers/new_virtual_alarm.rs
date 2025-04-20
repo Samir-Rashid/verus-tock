@@ -56,7 +56,8 @@ pub struct MuxAlarm<'a, A: Alarm<'a>> {
 }
 
 // Keep track of the single, real, physical alarm.
-pub tracked struct MuxAlarmState<'a, A: Alarm<'a>> {
+// TODO: ask Eric, marking this struct as `tracked` was causing the error
+pub struct MuxAlarmState<'a, A: Alarm<'a>> {
     // TODO: need virtual alarms state and virtual alarms Seq
 
     /// NUMBER of virtual alarms that are currently enabled.
@@ -70,8 +71,8 @@ pub tracked struct MuxAlarmState<'a, A: Alarm<'a>> {
 }
 
 impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
-    // TODO: this should return a type, not a pair
-    pub const fn new(alarm: &'a A) -> (MuxAlarm<'a, A>, MuxAlarmState<'a, A>) {
+    pub const fn new(alarm: &'a A) -> MuxAlarm<'a, A> {
+
         let (enabled , enabled_perm) = PCell::new(1);
         let (firing , firing_perm) = PCell::new(true);
         let (next_tick_vals , next_tick_vals_perm) = PCell::new(None);
@@ -88,20 +89,19 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
                 alarm,
                 firing: firing_perm,
                 next_tick_vals: next_tick_vals_perm,
-
             },
         }
     }
 
     // PRECONDITION: can only be sooner or if disabled
     pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks) {
-        self.next_tick_vals.set(Some((reference, dt)));
-        self.alarm.set_alarm(reference, dt);
+        // self.next_tick_vals.set(Some((reference, dt)));
+        // self.alarm.set_alarm(reference, dt);
     }
 
     pub fn disarm(&self) {
-        self.next_tick_vals.set(None);
-        let _ = self.alarm.disarm();
+        // self.next_tick_vals.set(None);
+        // let _ = self.alarm.disarm();
     }
 }
 
