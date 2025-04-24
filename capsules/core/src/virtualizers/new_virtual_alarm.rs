@@ -41,41 +41,62 @@ struct TickDtReference<T: Ticks> {
 
 /// Structure to control a set of virtual alarms multiplexed together on top of a single alarm.
 // #[verifier::reject_recursive_types(A)]
+// TODO: impl view trait which is correct way. turns exec mode item into a mathematical representation
 pub struct MuxAlarm<'a, A: Alarm<'a>> {
     /// Head of the linked list of virtual alarms multiplexed together.
     // virtual_alarms: ListV<'a, VirtualMuxAlarm<'a, A>>, // TODO:
     /// Number of virtual alarms that are currently enabled.
-    enabled: PCell<usize>, // TODO: determine why this is a cell
+    pub enabled: PCell<usize>, // TODO: determine why this is a cell
     /// Underlying alarm, over which the virtual alarms are multiplexed.
-    alarm: &'a A,
+    pub alarm: &'a A,
     /// Whether we are firing; used to delay restarted alarms
-    firing: PCell<bool>,
+    pub firing: PCell<bool>,
     /// Reference to next alarm
-    next_tick_vals: PCell<Option<(A::Ticks, A::Ticks)>>,
-    state: MuxAlarmState<'a, A>,
+    pub next_tick_vals: PCell<Option<(A::Ticks, A::Ticks)>>,
+    // "Struct fields of an exec struct must be exec mode"....... bruh
+    // https://verus-lang.github.io/verus/guide/reference-var-modes.html?highlight=tracked#using-tracked-and-ghost-variables-from-a-proof-function
+    pub tracked state: MuxAlarmState<'a, A>,
+}
+
+impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
+    type V = MuxAlarmState<'a, A>;
+    open spec fn view(&self) -> Self::V {
+        self.state
+    }
 }
 
 // Keep track of the single, real, physical alarm.
 // TODO: ask Eric, marking this struct as `tracked` was causing the error
-pub struct MuxAlarmState<'a, A: Alarm<'a>> {
+pub tracked struct MuxAlarmState<'a, A: Alarm<'a>> {
     // TODO: need virtual alarms state and virtual alarms Seq
 
     /// NUMBER of virtual alarms that are currently enabled.
-    enabled: Tracked<PointsTo<usize>>,
+    pub tracked enabled: int,
+    pub tracked enabled_perm: Tracked<PointsTo<usize>>,
     /// Underlying alarm, over which the virtual alarms are multiplexed.
-    alarm: &'a A,
+    pub tracked alarm: &'a A,
     /// Whether we are firing; used to delay restarted alarms
-    firing: Tracked<PointsTo<bool>>,
+    pub tracked firing: Tracked<PointsTo<bool>>,
     /// Reference to CURRENT ALARM ref and dt
-    next_tick_vals: Tracked<PointsTo<Option<(A::Ticks, A::Ticks)>>>,
+    pub tracked next_tick_vals: Tracked<PointsTo<Option<(A::Ticks, A::Ticks)>>>,
 }
 
 impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
-    pub const fn new(alarm: &'a A) -> MuxAlarm<'a, A> {
+    pub const fn new(alarm: &'a A) -> (res: MuxAlarm<'a, A>)
+        ensures
+            res@.enabled == 0,
+            // res.enabled.into_inner() == 0,
+            // res.firing.into_inner() == false,
+            // res.next_tick_vals.into_inner() == None,
+            // res.state.enabled.into_inner() == 0,
+            // res.state.firing.get().mem_contents().value() == false, // this field expression is disallowed because of datatype opaqueness
+            // res.state.next_tick_vals.get().mem_contents() == None<(A::Ticks, A::Ticks),
+    {
 
-        let (enabled , enabled_perm) = PCell::new(1);
-        let (firing , firing_perm) = PCell::new(true);
+        let (enabled , enabled_perm) = PCell::new(0);
+        let (firing , firing_perm) = PCell::new(false);
         let (next_tick_vals , next_tick_vals_perm) = PCell::new(None);
+        let tracked x: int = 5;
 
         MuxAlarm {
             // virtual_alarms: ListV::new(), // TODO:
@@ -85,7 +106,8 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
             next_tick_vals: next_tick_vals,
             state: MuxAlarmState {
                 // virtual_alarms: ListV::new(), // TODO:
-                enabled: enabled_perm,
+                enabled: x,
+                enabled_perm: enabled_perm,
                 alarm,
                 firing: firing_perm,
                 next_tick_vals: next_tick_vals_perm,
@@ -94,12 +116,25 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
     }
 
     // PRECONDITION: can only be sooner or if disabled
-    pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks) {
+    pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks)
+        ensures
+            // self.next_tick_vals.get().is_none() ==> self.next_tick_vals.get().is_some(),
+            // self.next_tick_vals.get().is_some() ==> self.next_tick_vals.get().is_none(),
+            // self.enabled.get() == 0 ==> self.enabled.get() == 1,
+            // self.firing.get() == false ==> self.firing.get() == true,
+            // self.alarm.now() == reference + dt,
+    {
         // self.next_tick_vals.set(Some((reference, dt)));
         // self.alarm.set_alarm(reference, dt);
     }
 
-    pub fn disarm(&self) {
+    pub fn disarm(&self)
+        ensures
+            // self.next_tick_vals.get().is_none(),
+            // self.enabled.get() == 0,
+            // self.firing.get() == false,
+            // self.alarm.now() == 0,
+    {
         // self.next_tick_vals.set(None);
         // let _ = self.alarm.disarm();
     }
@@ -110,7 +145,12 @@ impl<'a, A: Alarm<'a>> AlarmClient for MuxAlarm<'a, A> {
     /// When the underlying alarm has fired, we have to multiplex this event back to the virtual
     /// alarms that should now fire.
     // TODO: the buffer that we need to handle may not be bounded here? There can
-    fn alarm(&self) {
+    fn alarm(&self)
+        ensures
+            // self.enabled.get() == 0,
+            // self.firing.get() == false,
+            // self.next_tick_vals.get().is_none(),
+    {
         // // Check whether to fire each alarm. At this level, alarms are one-shot,
         // // so a repeating client will set it again in the alarm() callback.
         // self.firing.set(true);
