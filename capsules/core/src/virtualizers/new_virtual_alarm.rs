@@ -57,14 +57,15 @@ pub struct MuxAlarm<'a, A: Alarm<'a>> {
     // "Struct fields of an exec struct must be exec mode"....... bruh
     // https://verus-lang.github.io/verus/guide/reference-var-modes.html?highlight=tracked#using-tracked-and-ghost-variables-from-a-proof-function
     // pub tracked state: MuxAlarmState<'a, A>,
+    pub state: Tracked<MuxAlarmState<'a, A>>,
 }
 
-// impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
-//     type V = MuxAlarmState<'a, A>;
-//     open spec fn view(&self) -> Self::V {
-//         self.state
-//     }
-// }
+impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
+    type V = Tracked<MuxAlarmState<'a, A>>;
+    open spec fn view(&self) -> Self::V {
+        self.state
+    }
+}
 
 // Keep track of the single, real, physical alarm.
 // Undocumented that Tracked functions only work in proof mode https://verus-lang.github.io/verus/verusdoc/vstd/prelude/struct.Tracked.html#method.view
@@ -113,6 +114,14 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
             alarm,
             firing: firing,
             next_tick_vals: next_tick_vals,
+            state: Tracked(MuxAlarmState {
+                // virtual_alarms: ListV::new(), // TODO:
+                enabled: enabled_perm,
+                alarm,
+                firing: firing_perm,
+                fire_time: Tracked(None),
+                next_tick_vals: next_tick_vals_perm,
+            }),
         },
         Tracked(MuxAlarmState {
                 // virtual_alarms: ListV::new(), // TODO:
@@ -144,13 +153,24 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
         // self.alarm().set_alarm(reference, dt, &mut state@.alarm_state);
 
         // TODO: @eric? The verifier does not yet support the following Rust feature: &mut dereference in this position, with input as `state: Tracked<&mut MuxAlarmState<'a, A>>`
-        let tracked mut perms = state.next_tick_vals@;
-        self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
+        // let tracked mut perms = state.next_tick_vals@;
+        // self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
         // self.alarm.set_alarm(reference, dt);
+
+        /*
+        error: cannot perform operation with mode spec
+        --> capsules/core/src/virtualizers/new_virtual_alarm.rs:160:25
+            |
+        160 |         let mut perms = self.view().view().next_tick_vals;//@//@.next_tick_vals;
+            |                         ^^^^^^^^^^^^^^^^^^
+        */
+        let mut perms = self.view().view().next_tick_vals;//@//@.next_tick_vals;
+        // let mut perms = self@@.next_tick_vals;
+        self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
     }
 
     pub fn disarm(&self)
-        ensures
+        // ensures
             // self.next_tick_vals.get().is_none(),
             // self.enabled.get() == 0,
             // self.firing.get() == false,
