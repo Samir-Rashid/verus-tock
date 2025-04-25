@@ -39,6 +39,7 @@ struct TickDtReference<T: Ticks> {
     extended: bool,
 }
 
+// TODO: refactor PCell into type invariant or https://verus-lang.github.io/verus/verusdoc/vstd/cell/struct.InvCell.html
 /// Structure to control a set of virtual alarms multiplexed together on top of a single alarm.
 // #[verifier::reject_recursive_types(A)]
 // TODO: impl view trait which is correct way. turns exec mode item into a mathematical representation
@@ -55,76 +56,95 @@ pub struct MuxAlarm<'a, A: Alarm<'a>> {
     pub next_tick_vals: PCell<Option<(A::Ticks, A::Ticks)>>,
     // "Struct fields of an exec struct must be exec mode"....... bruh
     // https://verus-lang.github.io/verus/guide/reference-var-modes.html?highlight=tracked#using-tracked-and-ghost-variables-from-a-proof-function
-    pub tracked state: MuxAlarmState<'a, A>,
+    // pub tracked state: MuxAlarmState<'a, A>,
 }
 
-impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
-    type V = MuxAlarmState<'a, A>;
-    open spec fn view(&self) -> Self::V {
-        self.state
-    }
-}
+// impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
+//     type V = MuxAlarmState<'a, A>;
+//     open spec fn view(&self) -> Self::V {
+//         self.state
+//     }
+// }
 
 // Keep track of the single, real, physical alarm.
+// Undocumented that Tracked functions only work in proof mode https://verus-lang.github.io/verus/verusdoc/vstd/prelude/struct.Tracked.html#method.view
 // TODO: ask Eric, marking this struct as `tracked` was causing the error
 pub tracked struct MuxAlarmState<'a, A: Alarm<'a>> {
     // TODO: need virtual alarms state and virtual alarms Seq
 
     /// NUMBER of virtual alarms that are currently enabled.
-    pub tracked enabled: int,
-    pub tracked enabled_perm: Tracked<PointsTo<usize>>,
+    // pub tracked enabled: int,
+    pub tracked enabled: Tracked<PointsTo<usize>>,
     /// Underlying alarm, over which the virtual alarms are multiplexed.
     pub tracked alarm: &'a A,
     /// Whether we are firing; used to delay restarted alarms
     pub tracked firing: Tracked<PointsTo<bool>>,
     /// Reference to CURRENT ALARM ref and dt
-    pub tracked next_tick_vals: Tracked<PointsTo<Option<(A::Ticks, A::Ticks)>>>,
+    pub tracked next_tick_vals: PointsTo<Option<(A::Ticks, A::Ticks)>>,
+    /// tick value of firing: ref + dt % ticks width
+    pub tracked fire_time: Tracked<Option<A::Ticks>>,
 }
 
 impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
-    pub const fn new(alarm: &'a A) -> (res: MuxAlarm<'a, A>)
+    // #[exec]
+    /// Variables in exec code may be exec, ghost, or tracked.
+    /// However, exec function parameters and return values are always exec.
+    /// In these places, the library types Ghost and Tracked are used
+    /// to wrap ghost values and tracked values.
+    /// Ghost and tracked expressions Ghost(expr) and Tracked(expr) create values of type Ghost<T>
+    /// and Tracked<T>, where expr is treated as proof code whose value is wrapped inside Ghost or Tracked.
+    /// The view x@ of a Ghost or Tracked x is the ghost or tracked value inside the Ghost or Tracked.
+    pub const fn new(alarm: &'a A) -> (res: (MuxAlarm<'a, A>, Tracked<MuxAlarmState<'a, A>>))
         ensures
-            res@.enabled == 0,
-            // res.enabled.into_inner() == 0,
-            // res.firing.into_inner() == false,
-            // res.next_tick_vals.into_inner() == None,
-            // res.state.enabled.into_inner() == 0,
-            // res.state.firing.get().mem_contents().value() == false, // this field expression is disallowed because of datatype opaqueness
-            // res.state.next_tick_vals.get().mem_contents() == None<(A::Ticks, A::Ticks),
+            res.1@.enabled@.value() == 0,
+            res.1@.firing@.value() == false,
+            res.1@.next_tick_vals@.value() == None::<(A::Ticks, A::Ticks)>,
+            // res.state.firing.get().mem_contents().value() == false, // this field expression is disallowed because of datatype opaqueness => because this field was not pub
     {
 
         let (enabled , enabled_perm) = PCell::new(0);
         let (firing , firing_perm) = PCell::new(false);
         let (next_tick_vals , next_tick_vals_perm) = PCell::new(None);
-        let tracked x: int = 5;
+        // let tracked x: int = 5;
 
-        MuxAlarm {
+        (MuxAlarm {
             // virtual_alarms: ListV::new(), // TODO:
             enabled: enabled,
             alarm,
             firing: firing,
             next_tick_vals: next_tick_vals,
-            state: MuxAlarmState {
+        },
+        Tracked(MuxAlarmState {
                 // virtual_alarms: ListV::new(), // TODO:
-                enabled: x,
-                enabled_perm: enabled_perm,
+                enabled: enabled_perm,
                 alarm,
                 firing: firing_perm,
+                fire_time: Tracked(None),
                 next_tick_vals: next_tick_vals_perm,
-            },
-        }
+            }
+        ))
     }
 
-    // PRECONDITION: can only be sooner or if disabled
-    pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks)
-        ensures
+    pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks, state: &mut Tracked<MuxAlarmState<'a, A>>)
+        // requires
+            // PRECONDITION: can only be sooner or if disabled
+            // reference + dt < state@.fire_time@.value().unwrap_or(reference),
+
+        // ensures
+            // state.next_tick_vals@.value() == Some((reference, dt)),
             // self.next_tick_vals.get().is_none() ==> self.next_tick_vals.get().is_some(),
             // self.next_tick_vals.get().is_some() ==> self.next_tick_vals.get().is_none(),
             // self.enabled.get() == 0 ==> self.enabled.get() == 1,
             // self.firing.get() == false ==> self.firing.get() == true,
             // self.alarm.now() == reference + dt,
     {
-        // self.next_tick_vals.set(Some((reference, dt)));
+        let next_tick_vals_pt = state@.next_tick_vals;
+        self.next_tick_vals.write(Tracked(&mut next_tick_vals_pt), Some((reference, dt)));
+        // self.alarm().set_alarm(reference, dt, &mut state@.alarm_state);
+
+        // TODO: @eric? The verifier does not yet support the following Rust feature: &mut dereference in this position, with input as `state: Tracked<&mut MuxAlarmState<'a, A>>`
+        // let tracked mut perms = state@.next_tick_vals@;
+        // self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
         // self.alarm.set_alarm(reference, dt);
     }
 
