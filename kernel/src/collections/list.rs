@@ -30,11 +30,11 @@ impl<'a, T: ?Sized + ListNode<'a, T>> Iterator for ListIterator<'a, T> {
 
     fn next(&mut self) -> Option<&'a T> {
         match self.cur {
-            Some(res) => {
-                self.cur = res.next().0.get();
-                Some(res)
-            }
-            None => None,
+            // Some(res) => {
+            //     self.cur = res.next().0.get();
+            //     Some(res)
+            // }
+            _ => None,
         }
     }
 }
