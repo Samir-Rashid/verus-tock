@@ -70,20 +70,20 @@ impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
 // Keep track of the single, real, physical alarm.
 // Undocumented that Tracked functions only work in proof mode https://verus-lang.github.io/verus/verusdoc/vstd/prelude/struct.Tracked.html#method.view
 // TODO: ask Eric, marking this struct as `tracked` was causing the error
-pub tracked struct MuxAlarmState<'a, A: Alarm<'a>> {
+pub struct MuxAlarmState<'a, A: Alarm<'a>> {
     // TODO: need virtual alarms state and virtual alarms Seq
 
     /// NUMBER of virtual alarms that are currently enabled.
     // pub tracked enabled: int,
-    pub tracked enabled: Tracked<PointsTo<usize>>,
+    pub enabled: PointsTo<usize>,
     /// Underlying alarm, over which the virtual alarms are multiplexed.
-    pub tracked alarm: &'a A,
+    pub alarm: &'a A,
     /// Whether we are firing; used to delay restarted alarms
-    pub tracked firing: Tracked<PointsTo<bool>>,
+    pub firing: PointsTo<bool>,
     /// Reference to CURRENT ALARM ref and dt
-    pub tracked next_tick_vals: PointsTo<Option<(A::Ticks, A::Ticks)>>,
+    pub next_tick_vals: PointsTo<Option<(A::Ticks, A::Ticks)>>,
     /// tick value of firing: ref + dt % ticks width
-    pub tracked fire_time: Tracked<Option<A::Ticks>>,
+    pub fire_time: Option<A::Ticks>,
 }
 
 impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
@@ -95,20 +95,21 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
     /// Ghost and tracked expressions Ghost(expr) and Tracked(expr) create values of type Ghost<T>
     /// and Tracked<T>, where expr is treated as proof code whose value is wrapped inside Ghost or Tracked.
     /// The view x@ of a Ghost or Tracked x is the ghost or tracked value inside the Ghost or Tracked.
-    pub const fn new(alarm: &'a A) -> (res: (MuxAlarm<'a, A>, Tracked<MuxAlarmState<'a, A>>))
+    pub const fn new(alarm: &'a A) -> (res:MuxAlarm<'a, A>)//(res: (MuxAlarm<'a, A>, Tracked<MuxAlarmState<'a, A>>))
         ensures
-            res.1@.enabled@.value() == 0,
-            res.1@.firing@.value() == false,
-            res.1@.next_tick_vals.value() == None::<(A::Ticks, A::Ticks)>,
+            res@@.enabled.value() == 0,
+            res@@.firing.value() == false,
+            res@@.next_tick_vals.value() == None::<(A::Ticks, A::Ticks)>,
             // res.state.firing.get().mem_contents().value() == false, // this field expression is disallowed because of datatype opaqueness => because this field was not pub
     {
 
-        let (enabled , enabled_perm) = PCell::new(0);
-        let (firing , firing_perm) = PCell::new(false);
+        let (enabled , Tracked(enabled_perm)) = PCell::new(0);
+        let (firing , Tracked(firing_perm)) = PCell::new(false);
         let (next_tick_vals , Tracked(next_tick_vals_perm)) = PCell::new(None);
         // let tracked x: int = 5;
 
-        (MuxAlarm {
+        // (
+        MuxAlarm {
             // virtual_alarms: ListV::new(), // TODO:
             enabled: enabled,
             alarm,
@@ -119,23 +120,24 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
                 enabled: enabled_perm,
                 alarm,
                 firing: firing_perm,
-                fire_time: Tracked(None),
+                fire_time: None,
                 next_tick_vals: next_tick_vals_perm,
             }),
-        },
-        Tracked(MuxAlarmState {
-                // virtual_alarms: ListV::new(), // TODO:
-                enabled: enabled_perm,
-                alarm,
-                firing: firing_perm,
-                fire_time: Tracked(None),
-                next_tick_vals: next_tick_vals_perm,
-            }
-        ))
+        }
+        // Tracked(MuxAlarmState {
+        //         // virtual_alarms: ListV::new(), // TODO:
+        //         enabled: enabled_perm,
+        //         alarm,
+        //         firing: firing_perm,
+        //         fire_time: Tracked(None),
+        //         next_tick_vals: next_tick_vals_perm,
+        //     }
+        // )
+        // )
     }
 
     // BRO ZERO PCELL USAGE EXISTS https://github.com/search?q=.write(Tracked%20path%3A*.rs&type=code
-    pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks, state: &mut MuxAlarmState<'a, A>)
+    pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks)//, //state: &mut MuxAlarmState<'a, A>)
         // requires
             // PRECONDITION: can only be sooner or if disabled
             // reference + dt < state@.fire_time@.value().unwrap_or(reference),
