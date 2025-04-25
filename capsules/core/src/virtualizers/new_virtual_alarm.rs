@@ -60,6 +60,7 @@ pub struct MuxAlarm<'a, A: Alarm<'a>> {
     pub state: Tracked<MuxAlarmState<'a, A>>,
 }
 
+// returns spec mode
 impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
     type V = Tracked<MuxAlarmState<'a, A>>;
     open spec fn view(&self) -> Self::V {
@@ -166,8 +167,10 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
         160 |         let mut perms = self.view().view().next_tick_vals;//@//@.next_tick_vals;
             |                         ^^^^^^^^^^^^^^^^^^
         */
-        let mut perms = self.view().view().next_tick_vals;//@//@.next_tick_vals;
-        // let mut perms = self@@.next_tick_vals;
+        // let mut perms = self.view().view().next_tick_vals;//@//@.next_tick_vals;
+
+        let mut perms = self.view().view().next_tick_vals;
+        let tracked mut perms = self.state.get().next_tick_vals;
         self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
     }
 
