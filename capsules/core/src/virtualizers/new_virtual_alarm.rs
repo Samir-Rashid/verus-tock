@@ -98,13 +98,13 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
         ensures
             res.1@.enabled@.value() == 0,
             res.1@.firing@.value() == false,
-            res.1@.next_tick_vals@.value() == None::<(A::Ticks, A::Ticks)>,
+            res.1@.next_tick_vals.value() == None::<(A::Ticks, A::Ticks)>,
             // res.state.firing.get().mem_contents().value() == false, // this field expression is disallowed because of datatype opaqueness => because this field was not pub
     {
 
         let (enabled , enabled_perm) = PCell::new(0);
         let (firing , firing_perm) = PCell::new(false);
-        let (next_tick_vals , next_tick_vals_perm) = PCell::new(None);
+        let (next_tick_vals , Tracked(next_tick_vals_perm)) = PCell::new(None);
         // let tracked x: int = 5;
 
         (MuxAlarm {
@@ -125,7 +125,8 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
         ))
     }
 
-    pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks, state: &mut Tracked<MuxAlarmState<'a, A>>)
+    // BRO ZERO PCELL USAGE EXISTS https://github.com/search?q=.write(Tracked%20path%3A*.rs&type=code
+    pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks, state: &mut MuxAlarmState<'a, A>)
         // requires
             // PRECONDITION: can only be sooner or if disabled
             // reference + dt < state@.fire_time@.value().unwrap_or(reference),
@@ -138,13 +139,13 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
             // self.firing.get() == false ==> self.firing.get() == true,
             // self.alarm.now() == reference + dt,
     {
-        let next_tick_vals_pt = state@.next_tick_vals;
-        self.next_tick_vals.write(Tracked(&mut next_tick_vals_pt), Some((reference, dt)));
+        // let next_tick_vals_pt = state.next_tick_vals@;
+        // self.next_tick_vals.write(Tracked(&mut next_tick_vals_pt), Some((reference, dt)));
         // self.alarm().set_alarm(reference, dt, &mut state@.alarm_state);
 
         // TODO: @eric? The verifier does not yet support the following Rust feature: &mut dereference in this position, with input as `state: Tracked<&mut MuxAlarmState<'a, A>>`
-        // let tracked mut perms = state@.next_tick_vals@;
-        // self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
+        let tracked mut perms = state.next_tick_vals@;
+        self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
         // self.alarm.set_alarm(reference, dt);
     }
 
