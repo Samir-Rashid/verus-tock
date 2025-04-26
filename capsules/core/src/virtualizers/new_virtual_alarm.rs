@@ -18,11 +18,12 @@ use core::cmp::Ordering;
 use core::fmt;
 use kernel::ErrorCode;
 // spec_saturating_sub
-
+use core::cell::Cell;
 use kernel::collections::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
 use kernel::hil::time::{ex_saturatingsub, ExErrorCode, ExOrdering};
-use vstd::cell::*;
 // use kernel::hil::time::{Ticks, Time};
+use kernel::utilities::cells::OptionalCell;
+use vstd::cell::*;
 use vstd::prelude::*;
 
 verus! {
@@ -1193,7 +1194,171 @@ impl PartialEq for Ticks16 {
 impl Eq for Ticks16 {
 
 }
+
+
+struct FakeAlarm {
+    now: Cell<Ticks32>,
+    reference: Cell<Ticks32>,
+    dt: Cell<Ticks32>,
+    armed: Cell<bool>,
+    client: Cell<ClientCounter>,
+}
+
+impl FakeAlarm {
+    fn new() -> Self {
+        Self {
+            now: Cell::new(1_000u32.into()),
+            reference: Cell::new(0u32.into()),
+            dt: Cell::new(0u32.into()),
+            armed: Cell::new(false),
+            client: Cell::new(ClientCounter::new()),
+        }
+    }
+
+    /// The emulated delay from when hardware timer to when kernel loop will
+    /// run to check if alarms have fired or not.
+    pub fn hardware_delay(&self) -> Ticks32 {
+        Ticks32::from(10)
+    }
+
+    /// Fast forwards time to the next time we would fire an alarm and call client. Returns if
+    /// alarm is still armed after triggering client
+    pub fn trigger_next_alarm(&self) -> bool {
+        if !self.is_armed() {
+            return false;
+        }
+        self.now.set(
+            self.reference
+                .get()
+                .wrapping_add(self.dt.get())
+                .wrapping_add(self.hardware_delay()),
+        );
+        // self.client.map(|c| c.alarm());
+        // self.client.into_inner().alarm();
+        // TODO: call alarm
+
+
+        self.is_armed()
+    }
+
+    /// Runs for the specified number of ticks as long as there are alarms armed.
+    pub fn run_for_ticks(&self, left: Ticks32) {
+        let final_now = self.now.get().wrapping_add(left);
+        let mut left = left.into_u32();
+
+        // while self.is_armed() {
+        //     // Ensure that we have enough remaining ticks to handle the next alarm. Reference is
+        //     // always in the past, so we need to figure out the difference between the reference
+        //     // and now to discount the DT the alarm needs to wait by.
+        //     let ticks_from_reference = self.now.get().wrapping_sub(self.reference.get());
+        //     let dt = self
+        //         .dt
+        //         .get()
+        //         .into_u32()
+        //         .saturating_sub(ticks_from_reference.into_u32());
+        //     if dt <= left {
+        //         left -= dt;
+        //         self.trigger_next_alarm();
+        //     } else {
+        //         break;
+        //     }
+        // }
+        // Ensure that we ate up all of the time we were suppose to run for
+        self.now.set(final_now);
+    }
+}
+
+/// Clock fundamentally overflows
+#[verifier::external]
+impl Time for FakeAlarm {
+    type Ticks = Ticks32;
+    // type Frequency = FrequencyVal::Freq1KHz;
+
+    fn now(&self) -> Ticks32 {
+        // Every time we get now, it needs to increment to represent a free running timer
+        let new_now = Ticks32::from(self.now.get().into_u32() + 1);
+        self.now.set(new_now);
+        new_now
+    }
+    fn get_freq() -> u32 {
+        1_000
+    }
+}
+
+impl<'a> Alarm<'a> for FakeAlarm {
+    // fn set_alarm_client(&self, client: &'a dyn AlarmClient) {
+    //     self.client.set(client);
+    // }
+
+    fn set_alarm(&self, reference: Self::Ticks, dt: Self::Ticks) {
+        self.reference.set(reference);
+        self.dt.set(dt);
+        self.armed.set(true);
+    }
+
+    fn get_alarm(&self) -> Self::Ticks {
+        self.reference.get().wrapping_add(self.dt.get())
+    }
+
+    fn disarm(&self) -> Result<(), ErrorCode> {
+        self.armed.set(false);
+        Ok(())
+    }
+
+    fn is_armed(&self) -> bool {
+        self.armed.get()
+    }
+
+    fn minimum_dt(&self) -> Self::Ticks {
+        0u32.into()
+    }
+}
+
+struct ClientCounter(Cell<usize>);
+impl ClientCounter {
+    fn new() -> Self {
+        Self(Cell::new(0))
+    }
+    fn count(&self) -> usize {
+        self.0.get()
+    }
+}
+
+#[verifier::external]
+impl AlarmClient for ClientCounter {
+    fn alarm(&self) {
+        self.0.set(self.0.get() + 1); // fundamentally overflowing operation
+    }
+}
+
+fn run_until_disarmed(alarm: &FakeAlarm) {
+    // Don't loop forever if we never disarm
+    for _ in 0..20 {
+        if !alarm.trigger_next_alarm() {
+            return;
+        }
+    }
+}
+
+fn main() {
+    // let alarm = Alarm::new();
+    // write dummy negative tests
+    {
+        let alarm = FakeAlarm::new();
+        let client = ClientCounter::new();
+        // let dt = u32::MAX.into();
+
+        let mux = MuxAlarm::new(&alarm);
+        // alarm.set_alarm_client(&mux);
+
+        // assert_eq!(client.count(), 3);
+    }
+    // write dummy positive tests
+
+    // TODO: 3 test cases which correspond to the three overlapping cases. past/future/present
+}
 } // verus!
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1212,9 +1377,4 @@ mod tests {
             0u32.into()
         }
     }
-
-    // write dummy negative tests
-    // write dummy positive tests
-
-    // TODO: 3 test cases which correspond to the three overlapping cases. past/future/present
 }
