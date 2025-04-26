@@ -62,7 +62,7 @@ pub struct MuxAlarm<'a, A: Alarm<'a>> {
 
 // returns spec mode
 impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
-    type V = Tracked<MuxAlarmState<'a, A>>;
+    type V = Tracked<MuxAlarmState<'a, A>>; // TODO: this return doesn't need to be wrapped in Tracked<>
     open spec fn view(&self) -> Self::V {
         self.state
     }
@@ -88,6 +88,15 @@ pub struct MuxAlarmState<'a, A: Alarm<'a>> {
 }
 
 impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
+    /*
+    error: #[verifier::type_invariant]: a struct with a type invariant cannot have any fields public to the crate
+    */
+    // #[verifier::type_invariant]
+    // spec fn type_inv(self) -> bool {
+    //     true
+    // // use `proof {use_type_invariant(&self);}` to get access to this invariant in proofs
+    // }
+
     // #[exec]
     /// Variables in exec code may be exec, ghost, or tracked.
     /// However, exec function parameters and return values are always exec.
@@ -99,17 +108,20 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
     pub const fn new(alarm: &'a A) -> (res:MuxAlarm<'a, A>)//(res: (MuxAlarm<'a, A>, Tracked<MuxAlarmState<'a, A>>))
         ensures
             res@@.enabled.value() == 0,
+            res@@.enabled.id() == res.enabled.id(),
             res@@.firing.value() == false,
+            res@@.firing.id() == res.firing.id(),
             res@@.next_tick_vals.value() == None::<(A::Ticks, A::Ticks)>,
+            res@@.next_tick_vals.id() == res.next_tick_vals.id(),
+            res@@.enabled.is_init(),
+            res@@.firing.is_init(),
+            res@@.next_tick_vals.is_init(),
             // res.state.firing.get().mem_contents().value() == false, // this field expression is disallowed because of datatype opaqueness => because this field was not pub
+            res.next_tick_vals.id() === res@@.next_tick_vals@.pcell
     {
-
         let (enabled , Tracked(enabled_perm)) = PCell::new(0);
         let (firing , Tracked(firing_perm)) = PCell::new(false);
         let (next_tick_vals , Tracked(next_tick_vals_perm)) = PCell::new(None);
-        // let tracked x: int = 5;
-
-        // (
         MuxAlarm {
             // virtual_alarms: ListV::new(), // TODO:
             enabled: enabled,
@@ -125,25 +137,19 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
                 next_tick_vals: next_tick_vals_perm,
             }),
         }
-        // Tracked(MuxAlarmState {
-        //         // virtual_alarms: ListV::new(), // TODO:
-        //         enabled: enabled_perm,
-        //         alarm,
-        //         firing: firing_perm,
-        //         fire_time: Tracked(None),
-        //         next_tick_vals: next_tick_vals_perm,
-        //     }
-        // )
-        // )
     }
 
     // BRO ZERO PCELL USAGE EXISTS https://github.com/search?q=.write(Tracked%20path%3A*.rs&type=code
     pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks)//, //state: &mut MuxAlarmState<'a, A>)
-        // requires
+            // TODO: wrap requirements into "well formed" condition
+        requires
+            self.next_tick_vals.id() === self@@.next_tick_vals@.pcell,
+            self@@.next_tick_vals.is_init(),
             // PRECONDITION: can only be sooner or if disabled
             // reference + dt < state@.fire_time@.value().unwrap_or(reference),
 
-        // ensures
+        ensures
+            self.next_tick_vals.id() === self@@.next_tick_vals@.pcell
             // state.next_tick_vals@.value() == Some((reference, dt)),
             // self.next_tick_vals.get().is_none() ==> self.next_tick_vals.get().is_some(),
             // self.next_tick_vals.get().is_some() ==> self.next_tick_vals.get().is_none(),
@@ -151,38 +157,24 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
             // self.firing.get() == false ==> self.firing.get() == true,
             // self.alarm.now() == reference + dt,
     {
-        // let next_tick_vals_pt = state.next_tick_vals@;
-        // self.next_tick_vals.write(Tracked(&mut next_tick_vals_pt), Some((reference, dt)));
-        // self.alarm().set_alarm(reference, dt, &mut state@.alarm_state);
-
-        // TODO: @eric? The verifier does not yet support the following Rust feature: &mut dereference in this position, with input as `state: Tracked<&mut MuxAlarmState<'a, A>>`
-        // let tracked mut perms = state.next_tick_vals@;
-        // self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
-        // self.alarm.set_alarm(reference, dt);
-
-        /*
-        error: cannot perform operation with mode spec
-        --> capsules/core/src/virtualizers/new_virtual_alarm.rs:160:25
-            |
-        160 |         let mut perms = self.view().view().next_tick_vals;//@//@.next_tick_vals;
-            |                         ^^^^^^^^^^^^^^^^^^
-        */
-        // let mut perms = self.view().view().next_tick_vals;//@//@.next_tick_vals;
-
-        let mut perms = self.view().view().next_tick_vals;
         let tracked mut perms = self.state.get().next_tick_vals;
         self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
     }
 
     pub fn disarm(&self)
-        // ensures
+        requires
+            self.next_tick_vals.id() === self@@.next_tick_vals@.pcell,
+            self@@.next_tick_vals.is_init(),
+        ensures
+            self.next_tick_vals.id() === self@@.next_tick_vals@.pcell
             // self.next_tick_vals.get().is_none(),
             // self.enabled.get() == 0,
             // self.firing.get() == false,
             // self.alarm.now() == 0,
     {
-        // self.next_tick_vals.set(None);
-        // let _ = self.alarm.disarm();
+        let tracked mut perms = self.state.get().next_tick_vals;
+        self.next_tick_vals.write(Tracked(&mut perms), None);
+        let _ = self.alarm.disarm(); // TODO: this state modification needs to be modeled
     }
 }
 
@@ -192,7 +184,8 @@ impl<'a, A: Alarm<'a>> AlarmClient for MuxAlarm<'a, A> {
     /// alarms that should now fire.
     // TODO: the buffer that we need to handle may not be bounded here? There can
     fn alarm(&self)
-        ensures
+        // ensures
+        //     self.next_tick_vals.id() === self@@.next_tick_vals@.pcell
             // self.enabled.get() == 0,
             // self.firing.get() == false,
             // self.next_tick_vals.get().is_none(),
