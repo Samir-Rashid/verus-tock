@@ -1196,22 +1196,22 @@ impl Eq for Ticks16 {
 }
 
 
-struct FakeAlarm {
+struct FakeAlarm<'a> {
     now: Cell<Ticks32>,
     reference: Cell<Ticks32>,
     dt: Cell<Ticks32>,
     armed: Cell<bool>,
-    client: Cell<ClientCounter>,
+    client: &'a ClientCounter, // can't use AlarmClient trait bc verus restriction on dynamic trait objects
 }
 
-impl FakeAlarm {
+impl<'a> FakeAlarm<'a> {
     fn new() -> Self {
         Self {
             now: Cell::new(1_000u32.into()),
             reference: Cell::new(0u32.into()),
             dt: Cell::new(0u32.into()),
             armed: Cell::new(false),
-            client: Cell::new(ClientCounter::new()),
+            client: &ClientCounter::new(),
         }
     }
 
@@ -1233,9 +1233,11 @@ impl FakeAlarm {
                 .wrapping_add(self.dt.get())
                 .wrapping_add(self.hardware_delay()),
         );
+        // NOTE: verus does not support calling the function inside a cell, so cannot be put into a cell
         // self.client.map(|c| c.alarm());
         // self.client.into_inner().alarm();
-        // TODO: call alarm
+        // self.client.take().alarm();
+        self.client.alarm();
 
 
         self.is_armed()
@@ -1246,37 +1248,42 @@ impl FakeAlarm {
         let final_now = self.now.get().wrapping_add(left);
         let mut left = left.into_u32();
 
-        // while self.is_armed() {
-        //     // Ensure that we have enough remaining ticks to handle the next alarm. Reference is
-        //     // always in the past, so we need to figure out the difference between the reference
-        //     // and now to discount the DT the alarm needs to wait by.
-        //     let ticks_from_reference = self.now.get().wrapping_sub(self.reference.get());
-        //     let dt = self
-        //         .dt
-        //         .get()
-        //         .into_u32()
-        //         .saturating_sub(ticks_from_reference.into_u32());
-        //     if dt <= left {
-        //         left -= dt;
-        //         self.trigger_next_alarm();
-        //     } else {
-        //         break;
-        //     }
-        // }
+        while self.is_armed() {
+            // Ensure that we have enough remaining ticks to handle the next alarm. Reference is
+            // always in the past, so we need to figure out the difference between the reference
+            // and now to discount the DT the alarm needs to wait by.
+            let ticks_from_reference = self.now.get().wrapping_sub(self.reference.get());
+            let dt = self
+                .dt
+                .get()
+                .into_u32()
+                .saturating_sub(ticks_from_reference.into_u32());
+            if dt <= left {
+                left -= dt;
+                self.trigger_next_alarm();
+            } else {
+                break;
+            }
+        }
         // Ensure that we ate up all of the time we were suppose to run for
         self.now.set(final_now);
     }
 }
 
-/// Clock fundamentally overflows
-#[verifier::external]
-impl Time for FakeAlarm {
+impl<'a> Time for FakeAlarm<'a> {
     type Ticks = Ticks32;
     // type Frequency = FrequencyVal::Freq1KHz;
 
+    // TODO: maybe this should increment now by any possible value
     fn now(&self) -> Ticks32 {
         // Every time we get now, it needs to increment to represent a free running timer
-        let new_now = Ticks32::from(self.now.get().into_u32() + 1);
+        let old_now = self.now.get().into_u32();
+        let new_now = if old_now == u32::MAX {
+            Ticks32::from(0)
+        } else {
+            Ticks32::from(old_now + 1)
+
+        };
         self.now.set(new_now);
         new_now
     }
@@ -1285,7 +1292,7 @@ impl Time for FakeAlarm {
     }
 }
 
-impl<'a> Alarm<'a> for FakeAlarm {
+impl<'a> Alarm<'a> for FakeAlarm<'a> {
     // fn set_alarm_client(&self, client: &'a dyn AlarmClient) {
     //     self.client.set(client);
     // }
@@ -1314,7 +1321,10 @@ impl<'a> Alarm<'a> for FakeAlarm {
     }
 }
 
-struct ClientCounter(Cell<usize>);
+// #[derive(Default)]
+struct ClientCounter(
+    Cell<usize>
+);
 impl ClientCounter {
     fn new() -> Self {
         Self(Cell::new(0))
@@ -1324,10 +1334,18 @@ impl ClientCounter {
     }
 }
 
-#[verifier::external]
+// #[verifier::external]
 impl AlarmClient for ClientCounter {
     fn alarm(&self) {
-        self.0.set(self.0.get() + 1); // fundamentally overflowing operation
+        // fundamentally overflowing operation
+        let old_count = self.0.get();
+        let new_count = if old_count == usize::MAX {
+            0
+        } else {
+            old_count + 1
+
+        };
+        self.0.set(new_count);
     }
 }
 
@@ -1341,19 +1359,32 @@ fn run_until_disarmed(alarm: &FakeAlarm) {
 }
 
 fn main() {
-    // let alarm = Alarm::new();
-    // write dummy negative tests
-    {
+    // write dummy positive tests
+    { // One alarm will fire
         let alarm = FakeAlarm::new();
         let client = ClientCounter::new();
         // let dt = u32::MAX.into();
 
         let mux = MuxAlarm::new(&alarm);
         // alarm.set_alarm_client(&mux);
+        mux.set_alarm(alarm.now(), 10.into());
+        run_until_disarmed(&alarm);
 
-        // assert_eq!(client.count(), 3);
+        let fired_count = client.count();
+        proof{
+            assert(fired_count == 1);
+        }
     }
-    // write dummy positive tests
+    { // five alarms will fire
+
+    }
+    { // disarming an alarm will not fire
+
+    }
+    // write dummy negative tests
+    { //
+
+    }
 
     // TODO: 3 test cases which correspond to the three overlapping cases. past/future/present
 }
