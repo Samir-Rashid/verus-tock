@@ -191,12 +191,14 @@ impl<'a, A: Alarm<'a>> AlarmClient for MuxAlarm<'a, A> {
             // self.firing.get() == false,
             // self.next_tick_vals.get().is_none(),
     {
-        // // Check whether to fire each alarm. At this level, alarms are one-shot,
-        // // so a repeating client will set it again in the alarm() callback.
+        // Check whether to fire each alarm. At this level, alarms are one-shot,
+        // so a repeating client will set it again in the alarm() callback.
         // self.firing.set(true);
+        // let tracked mut perms = self.state.get().firing;
+        // self.firing.write(Tracked(&mut perms), false);
         // let mut iterator = ListIteratorV { cur: self.virtual_alarms.head() };
-        // // for cur in self.virtual_alarms.iter() {
-        // // while let Some(cur) = current {
+        // for cur in self.virtual_alarms.iter() {
+        // while let Some(cur) = current {
         // loop {
         //     match iterator.next() {
         //         Some(cur) => {
@@ -215,10 +217,10 @@ impl<'a, A: Alarm<'a>> AlarmClient for MuxAlarm<'a, A> {
         //                         },
         //                     );
         //                 } else {
-        //                     cur.armed.set(false);
-        //                     // VERUS-TODO uncomment the following line and prove the lack of overflow
-        //                     // self.enabled.set(self.enabled.get() - 1);
-        //                     cur.alarm();
+                            // cur.armed.set(false); // TODO:
+                            // VERUS-TODO uncomment the following line and prove the lack of overflow
+                            // self.enabled.set(self.enabled.get() - 1);
+                            // cur.alarm(); // TODO: important line
         //                 }
         //             }
         //         },
@@ -1322,13 +1324,16 @@ impl<'a> Alarm<'a> for FakeAlarm<'a> {
 }
 
 // #[derive(Default)]
-struct ClientCounter(
-    Cell<usize>
-);
+struct ClientCounter( Cell<usize>, ClientCounterState);
+struct ClientCounterState {
+    count: usize,
+}
+
 impl ClientCounter {
     fn new() -> Self {
-        Self(Cell::new(0))
+        Self(Cell::new(0), ClientCounterState { count: 0 })
     }
+
     fn count(&self) -> usize {
         self.0.get()
     }
