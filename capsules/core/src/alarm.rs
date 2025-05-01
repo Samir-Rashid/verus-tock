@@ -9,7 +9,7 @@ use kernel::grant::{AllowRoCount, AllowRwCount, Grant, UpcallCount};
 use kernel::hil::time::{self, Alarm, Ticks};
 use kernel::syscall::{CommandReturn, SyscallDriver};
 use kernel::{ErrorCode, ProcessId};
-use vstd::prelude::*;
+// use vstd::prelude::*;
 
 /// Syscall driver number.
 use crate::driver;
@@ -95,9 +95,9 @@ pub struct AlarmDriver<'a, A: Alarm<'a>> {
     app_alarms:
         Grant<AlarmData<A::Ticks>, UpcallCount<NUM_UPCALLS>, AllowRoCount<0>, AllowRwCount<0>>,
 }
-use kernel::grant::AllowRoSize;
-use kernel::grant::AllowRwSize;
-use kernel::grant::UpcallSize;
+// use kernel::grant::AllowRoSize;
+// use kernel::grant::AllowRwSize;
+// use kernel::grant::UpcallSize;
 
 // #[verifier::external_type_specification]
 // #[verifier::external_body]

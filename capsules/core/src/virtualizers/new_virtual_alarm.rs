@@ -22,7 +22,7 @@ use core::cell::Cell;
 use kernel::collections::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
 use kernel::hil::time::{ex_saturatingsub, ExErrorCode, ExOrdering};
 // use kernel::hil::time::{Ticks, Time};
-use kernel::utilities::cells::OptionalCell;
+// use kernel::utilities::cells::OptionalCell;
 use vstd::cell::*;
 use vstd::prelude::*;
 
@@ -40,15 +40,238 @@ struct TickDtReference<T: Ticks> {
     extended: bool,
 }
 
+
+impl<T: Ticks> TickDtReference<T> {
+    #[inline]
+    fn reference_plus_dt(&self) -> T {
+        self.reference.wrapping_add(self.dt)
+    }
+}
+
+/// An object to multiplex multiple "virtual" alarms over a single underlying alarm. A
+/// `VirtualMuxAlarm` is a node in a linked list of alarms that share the same underlying alarm.
+// #[verifier::reject_recursive_types(A)]
+pub struct VirtualMuxAlarm<'a, A: Alarm<'a>> {
+    /// Underlying alarm which multiplexes all these virtual alarm.
+    mux: &'a MuxAlarm<'a, A>,
+    /// Reference and dt point when this alarm was setup.
+    dt_reference: PCell<TickDtReference<A::Ticks>>,
+    /// Whether this alarm is currently armed, i.e. whether it should fire when the time has
+    /// elapsed.
+    armed: PCell<bool>,
+    /// Next alarm in the list.
+    next: ListLinkV<'a, VirtualMuxAlarm<'a, A>>,
+    /// Alarm client for this node in the list.
+    client: &'a ClientCounter,
+    state: Tracked<VirtualMuxAlarmState<'a, A>>,
+}
+
+// #[verifier::reject_recursive_types(A)]
+pub struct VirtualMuxAlarmState<'a, A: Alarm<'a>> {
+    /// Underlying alarm which multiplexes all these virtual alarm.
+    // mux: MuxAlarmState<'a, A>, // NOTE: keeps track of its own state
+    /// Reference and dt point when this alarm was setup.
+    dt_reference: PointsTo<TickDtReference<A::Ticks>>,
+    /// Whether this alarm is currently armed, i.e. whether it should fire when the time has
+    /// elapsed.
+    armed: PointsTo<bool>,
+    /// Next alarm in the list.
+    next: GhostState<'a, VirtualMuxAlarm<'a, A>>,
+    // /// Alarm client for this node in the list.
+    // client: &'a ClientCounter, // NOTE: keeps track of its own state
+}
+// builtin::Tracked<&vstd::cell::PointsTo<core::option::Option<&'a virtualizers::new_virtual_alarm::VirtualMuxAlarm<'a, A>>>>
+// #[verifier::external]
+impl<'a, A: Alarm<'a>> ListNodeV<'a, VirtualMuxAlarm<'a, A>> for VirtualMuxAlarm<'a, A> {
+    fn next(&'a self, perm: builtin::Tracked<&vstd::cell::PointsTo<core::option::Option<&'a VirtualMuxAlarm<'a, A>>>>) -> &'a ListLinkV<VirtualMuxAlarm<'a, A>> {
+        // &self.next(Tracked(&self.state.get().next))
+        match self.next {
+            Some(next) => &next.unwrap(),
+            None => unreachable!(),
+        }
+    }
+}
+// impl<'a, A: Alarm<'a>> ListNodeV<'a, VirtualMuxAlarm<'a, A>> for VirtualMuxAlarm<'a, A> {
+//     fn next(&'a self, next_points_to: Tracked<&PointsTo<Option<&'a VirtualMuxAlarm<'a, A>>>>) -> &'a ListLinkV<'a, VirtualMuxAlarm<'a, A>> {
+//         match self.next {
+//             Some(next) => &next,
+//             None => unreachable!(),
+//         }
+//     }
+// }
+
+impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
+    /// After calling new, always call setup()
+    pub fn new(mux_alarm: &'a MuxAlarm<'a, A>) -> VirtualMuxAlarm<'a, A> {
+        let zero = A::Ticks::from(0);
+
+        let (dt_reference, Tracked(dt_reference_perm)) = PCell::new(TickDtReference {
+                reference: zero,
+                dt: zero,
+                extended: false,
+            });
+        let (armed, Tracked(armed_perm)) = PCell::new(false);
+        let (list_link, Tracked(list_link_perm)) = ListLinkV::empty();
+
+        VirtualMuxAlarm {
+            mux: mux_alarm,
+            dt_reference: dt_reference,
+            armed: armed,
+            next: list_link,
+            client: &ClientCounter::new(),
+            state: Tracked(VirtualMuxAlarmState {
+                dt_reference: dt_reference_perm,
+                armed: armed_perm,
+                next: list_link_perm,
+            }),
+        }
+    }
+
+    /// Call this method immediately after new() to link this to the mux, otherwise alarms won't
+    /// fire
+    pub fn setup(&'a self) {
+        // self.mux.virtual_alarms.push_head(self);
+    }
+}
+
+impl<'a, A: Alarm<'a>> Time for VirtualMuxAlarm<'a, A> {
+    // type Frequency = A::Frequency;
+    type Ticks = A::Ticks;
+
+    fn now(&self) -> Self::Ticks {
+        self.mux.alarm.now()
+    }
+
+    fn get_freq() -> u32 {
+        1_000
+    }
+}
+
+impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
+    // fn set_alarm_client(&self, client: &'a dyn time::AlarmClient) {
+    //     self.client.set(client);
+    // }
+
+    #[verifier(external_fn_specification)]
+    fn disarm(&self) -> Result<(), ErrorCode> {
+        // if !self.armed.get() {
+        //     return Ok(());
+        // }
+
+        // self.armed.set(false);
+
+        // let enabled = self.mux.enabled.get() - 1;
+        // self.mux.enabled.set(enabled);
+
+        // // If there are not more enabled alarms, disable the underlying alarm
+        // // completely.
+        // if enabled == 0 {
+        //     let _ = self.mux.alarm.disarm();
+        // }
+        Ok(())
+    }
+
+    #[verifier(external_fn_specification)]
+    fn is_armed(&self) -> bool {
+        true // TODO: dummy value, delete
+        // self.armed.get()
+    }
+
+    fn set_alarm(&self, reference: Self::Ticks, dt: Self::Ticks) {
+        // let enabled = self.mux.enabled.get();
+        // let half_max = Self::Ticks::half_max_value();
+        // // If the dt is more than half of the available time resolution, then we need to break
+        // // up the alarm into two internal alarms. This ensures that our internal comparisons of
+        // // now outside of range [ref, ref + dt) will trigger correctly even with latency in the
+        // // system
+        // let dt_reference = if dt > half_max.wrapping_add(self.minimum_dt()) {
+        //     TickDtReference {
+        //         reference,
+        //         dt: dt.wrapping_sub(half_max),
+        //         extended: true,
+        //     }
+        // } else {
+        //     TickDtReference {
+        //         reference,
+        //         dt,
+        //         extended: false,
+        //     }
+        // };
+        // self.dt_reference.set(dt_reference);
+        // // Ensure local variable has correct value when used below
+        // let dt = dt_reference.dt;
+
+        // if !self.armed.get() {
+        //     self.mux.enabled.set(enabled + 1);
+        //     self.armed.set(true);
+        // }
+
+        // // First alarm, so set it
+        // if enabled == 0 {
+        //     //debug!("virtual_alarm: first alarm: set it.");
+        //     self.mux.set_alarm(reference, dt);
+        // } else if !self.mux.firing.get() {
+        //     // If firing is true, the mux will scan all the alarms after
+        //     // firing and pick the soonest one so do not need to modify the
+        //     // mux. Otherwise, this is an alarm
+        //     // started in a separate code path (e.g., another event).
+        //     // This new alarm fires sooner if two things are both true:
+        //     //    1. The current earliest alarm expiration doesn't fall
+        //     //    in the range of [reference, reference+dt): this means
+        //     //    it is either in the past (before reference) or the future
+        //     //    (reference + dt), AND
+        //     //    2. now falls in the [reference, reference+dt)
+        //     //    window of the current earliest alarm. This means the
+        //     //    current earliest alarm hasn't fired yet (it is in the future).
+        //     // -pal
+        //     let cur_alarm = self.mux.alarm.get_alarm();
+        //     let now = self.mux.alarm.now();
+        //     let expiration = reference.wrapping_add(dt);
+        //     if !cur_alarm.within_range(reference, expiration) {
+        //         let next = self.mux.next_tick_vals.get();
+        //         if next.is_none_or(|(next_reference, next_dt)| {
+        //             now.within_range(next_reference, next_reference.wrapping_add(next_dt))
+        //         }) {
+        //             self.mux.set_alarm(reference, dt);
+        //         }
+        //     } else {
+        //         // current alarm will fire earlier, keep it
+        //     }
+        // }
+    }
+
+    #[verifier(external_fn_specification)]
+    fn get_alarm(&self) -> Self::Ticks {
+            Self::Ticks::from(0) // TODO: dummy value, delete
+        // let dt_reference = self.dt_reference.get();
+        // let extension = if dt_reference.extended {
+        //     Self::Ticks::half_max_value()
+        // } else {
+        //     Self::Ticks::from(0)
+        // };
+        // dt_reference.reference_plus_dt().wrapping_add(extension)
+    }
+
+    fn minimum_dt(&self) -> Self::Ticks {
+        self.mux.alarm.minimum_dt()
+    }
+}
+
+impl<'a, A: Alarm<'a>> AlarmClient for VirtualMuxAlarm<'a, A> {
+    fn alarm(&self) {
+        // self.client.map(|client| client.alarm());
+    }
+}
+
 // TODO: refactor PCell into type invariant or https://verus-lang.github.io/verus/verusdoc/vstd/cell/struct.InvCell.html
 /// Structure to control a set of virtual alarms multiplexed together on top of a single alarm.
 // #[verifier::reject_recursive_types(A)]
 // TODO: impl view trait which is correct way. turns exec mode item into a mathematical representation
 pub struct MuxAlarm<'a, A: Alarm<'a>> {
     /// Head of the linked list of virtual alarms multiplexed together.
-    // virtual_alarms: ListV<'a, VirtualMuxAlarm<'a, A>>, // TODO:
+    pub virtual_alarms: ListV<'a, VirtualMuxAlarm<'a, A>>,
     /// Number of virtual alarms that are currently enabled.
-    pub enabled: PCell<usize>, // TODO: determine why this is a cell
+    pub enabled: PCell<usize>,
     /// Underlying alarm, over which the virtual alarms are multiplexed.
     pub alarm: &'a A,
     /// Whether we are firing; used to delay restarted alarms
@@ -74,7 +297,8 @@ impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
 // TODO: ask Eric, marking this struct as `tracked` was causing the error
 pub struct MuxAlarmState<'a, A: Alarm<'a>> {
     // TODO: need virtual alarms state and virtual alarms Seq
-
+    pub virtual_alarm_states_seq: Seq<VirtualMuxAlarmState<'a, A>>,
+    pub virtual_alarms: PointsTo<ListLinkV<'a, VirtualMuxAlarm<'a, A>>>,
     /// NUMBER of virtual alarms that are currently enabled.
     // pub tracked enabled: int,
     pub enabled: PointsTo<usize>,
@@ -123,14 +347,17 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
         let (enabled , Tracked(enabled_perm)) = PCell::new(0);
         let (firing , Tracked(firing_perm)) = PCell::new(false);
         let (next_tick_vals , Tracked(next_tick_vals_perm)) = PCell::new(None);
+        let (virtual_alarms, Tracked(virtual_alarms_perm)) = ListV::new();
+
         MuxAlarm {
-            // virtual_alarms: ListV::new(), // TODO:
+            virtual_alarms: virtual_alarms,
             enabled: enabled,
             alarm,
             firing: firing,
             next_tick_vals: next_tick_vals,
             state: Tracked(MuxAlarmState {
-                // virtual_alarms: ListV::new(), // TODO:
+                virtual_alarm_states_seq: Seq::empty(),
+                virtual_alarms: virtual_alarms_perm,
                 enabled: enabled_perm,
                 alarm,
                 firing: firing_perm,
@@ -1354,6 +1581,7 @@ impl AlarmClient for ClientCounter {
     }
 }
 
+// TODO: hmm, I'm not doing executable code, so what if I instead model real time by running a tick() function billions of times that generates the interrupt. Verus should be able to verify that since it doesn't add any complexity?
 fn run_until_disarmed(alarm: &FakeAlarm) {
     // Don't loop forever if we never disarm
     for _ in 0..20 {
