@@ -19,7 +19,8 @@ use core::fmt;
 use kernel::ErrorCode;
 // spec_saturating_sub
 use core::cell::Cell;
-use kernel::collections::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
+// use kernel::collections::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
+use super::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
 use kernel::hil::time::{ex_saturatingsub, ExErrorCode, ExOrdering};
 // use kernel::hil::time::{Ticks, Time};
 // use kernel::utilities::cells::OptionalCell;
@@ -76,19 +77,23 @@ pub struct VirtualMuxAlarmState<'a, A: Alarm<'a>> {
     /// elapsed.
     armed: PointsTo<bool>,
     /// Next alarm in the list.
-    next: GhostState<'a, VirtualMuxAlarm<'a, A>>,
+    // next: GhostState<'a, VirtualMuxAlarm<'a, A>>,
+    next: PointsTo<Option<&'a VirtualMuxAlarm<'a, A>>>,
     // /// Alarm client for this node in the list.
     // client: &'a ClientCounter, // NOTE: keeps track of its own state
 }
 // builtin::Tracked<&vstd::cell::PointsTo<core::option::Option<&'a virtualizers::new_virtual_alarm::VirtualMuxAlarm<'a, A>>>>
+// TODO: fairly sure I did something wrong here
 // #[verifier::external]
 impl<'a, A: Alarm<'a>> ListNodeV<'a, VirtualMuxAlarm<'a, A>> for VirtualMuxAlarm<'a, A> {
     fn next(&'a self, perm: builtin::Tracked<&vstd::cell::PointsTo<core::option::Option<&'a VirtualMuxAlarm<'a, A>>>>) -> &'a ListLinkV<VirtualMuxAlarm<'a, A>> {
-        // &self.next(Tracked(&self.state.get().next))
-        match self.next {
-            Some(next) => &next.unwrap(),
-            None => unreachable!(),
-        }
+        // &self.next(Tracked(&self.state.get().next).borrow()))
+        // let points_to = perm.borrow().points_to_map;
+        &self.next((perm))
+        // match self.next {
+        //     Some(next) => &(next.unwrap().unwrap()),
+        //     None => unreachable!(),
+        // }
     }
 }
 // impl<'a, A: Alarm<'a>> ListNodeV<'a, VirtualMuxAlarm<'a, A>> for VirtualMuxAlarm<'a, A> {
@@ -152,7 +157,7 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
     //     self.client.set(client);
     // }
 
-    #[verifier(external_fn_specification)]
+    // #[verifier(external_fn_specification)]
     fn disarm(&self) -> Result<(), ErrorCode> {
         // if !self.armed.get() {
         //     return Ok(());
@@ -171,7 +176,7 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
         Ok(())
     }
 
-    #[verifier(external_fn_specification)]
+    // #[verifier(external_fn_specification)]
     fn is_armed(&self) -> bool {
         true // TODO: dummy value, delete
         // self.armed.get()
@@ -240,7 +245,7 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
         // }
     }
 
-    #[verifier(external_fn_specification)]
+    // #[verifier(external_fn_specification)]
     fn get_alarm(&self) -> Self::Ticks {
             Self::Ticks::from(0) // TODO: dummy value, delete
         // let dt_reference = self.dt_reference.get();
@@ -265,8 +270,9 @@ impl<'a, A: Alarm<'a>> AlarmClient for VirtualMuxAlarm<'a, A> {
 
 // TODO: refactor PCell into type invariant or https://verus-lang.github.io/verus/verusdoc/vstd/cell/struct.InvCell.html
 /// Structure to control a set of virtual alarms multiplexed together on top of a single alarm.
-// #[verifier::reject_recursive_types(A)]
 // TODO: impl view trait which is correct way. turns exec mode item into a mathematical representation
+#[verifier::reject_recursive_types(A)]
+// #[verifier::reject_recursive_types(VirtualMuxAlarm)]
 pub struct MuxAlarm<'a, A: Alarm<'a>> {
     /// Head of the linked list of virtual alarms multiplexed together.
     pub virtual_alarms: ListV<'a, VirtualMuxAlarm<'a, A>>,
@@ -298,7 +304,7 @@ impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
 pub struct MuxAlarmState<'a, A: Alarm<'a>> {
     // TODO: need virtual alarms state and virtual alarms Seq
     pub virtual_alarm_states_seq: Seq<VirtualMuxAlarmState<'a, A>>,
-    pub virtual_alarms: PointsTo<ListLinkV<'a, VirtualMuxAlarm<'a, A>>>,
+    pub virtual_alarms: GhostState<'a, VirtualMuxAlarm<'a, A>>,
     /// NUMBER of virtual alarms that are currently enabled.
     // pub tracked enabled: int,
     pub enabled: PointsTo<usize>,
@@ -1602,6 +1608,9 @@ fn main() {
         // alarm.set_alarm_client(&mux);
         mux.set_alarm(alarm.now(), 10.into());
         run_until_disarmed(&alarm);
+        // loop {
+        //     tick.increment();
+        // }
 
         let fired_count = client.count();
         proof{
