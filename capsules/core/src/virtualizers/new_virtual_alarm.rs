@@ -21,7 +21,7 @@ use kernel::ErrorCode;
 use core::cell::Cell;
 // use kernel::collections::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
 use super::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
-use kernel::hil::time::{ex_saturatingsub, ExErrorCode, ExOrdering};
+// use kernel::hil::time::{ex_saturatingsub, ExErrorCode, ExOrdering};
 // use kernel::hil::time::{Ticks, Time};
 // use kernel::utilities::cells::OptionalCell;
 use vstd::cell::*;
@@ -51,7 +51,7 @@ impl<T: Ticks> TickDtReference<T> {
 
 /// An object to multiplex multiple "virtual" alarms over a single underlying alarm. A
 /// `VirtualMuxAlarm` is a node in a linked list of alarms that share the same underlying alarm.
-// #[verifier::reject_recursive_types(A)]
+#[verifier::reject_recursive_types(A)]
 pub struct VirtualMuxAlarm<'a, A: Alarm<'a>> {
     /// Underlying alarm which multiplexes all these virtual alarm.
     mux: &'a MuxAlarm<'a, A>,
@@ -61,13 +61,13 @@ pub struct VirtualMuxAlarm<'a, A: Alarm<'a>> {
     /// elapsed.
     armed: PCell<bool>,
     /// Next alarm in the list.
-    next: ListLinkV<'a, VirtualMuxAlarm<'a, A>>,
+    next: Option<ListLinkV<'a, VirtualMuxAlarm<'a, A>>>,
     /// Alarm client for this node in the list.
     client: &'a ClientCounter,
     state: Tracked<VirtualMuxAlarmState<'a, A>>,
 }
 
-// #[verifier::reject_recursive_types(A)]
+#[verifier::reject_recursive_types(A)]
 pub struct VirtualMuxAlarmState<'a, A: Alarm<'a>> {
     /// Underlying alarm which multiplexes all these virtual alarm.
     // mux: MuxAlarmState<'a, A>, // NOTE: keeps track of its own state
@@ -119,10 +119,10 @@ impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
         let (list_link, Tracked(list_link_perm)) = ListLinkV::empty();
 
         VirtualMuxAlarm {
-            mux: mux_alarm,
+            mux: (mux_alarm),
             dt_reference: dt_reference,
             armed: armed,
-            next: list_link,
+            next: Some(list_link),
             client: &ClientCounter::new(),
             state: Tracked(VirtualMuxAlarmState {
                 dt_reference: dt_reference_perm,
@@ -272,10 +272,9 @@ impl<'a, A: Alarm<'a>> AlarmClient for VirtualMuxAlarm<'a, A> {
 /// Structure to control a set of virtual alarms multiplexed together on top of a single alarm.
 // TODO: impl view trait which is correct way. turns exec mode item into a mathematical representation
 #[verifier::reject_recursive_types(A)]
-// #[verifier::reject_recursive_types(VirtualMuxAlarm)]
 pub struct MuxAlarm<'a, A: Alarm<'a>> {
     /// Head of the linked list of virtual alarms multiplexed together.
-    pub virtual_alarms: ListV<'a, VirtualMuxAlarm<'a, A>>,
+    pub virtual_alarms: Option<ListV<'a, VirtualMuxAlarm<'a, A>>>,
     /// Number of virtual alarms that are currently enabled.
     pub enabled: PCell<usize>,
     /// Underlying alarm, over which the virtual alarms are multiplexed.
@@ -301,10 +300,11 @@ impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
 // Keep track of the single, real, physical alarm.
 // Undocumented that Tracked functions only work in proof mode https://verus-lang.github.io/verus/verusdoc/vstd/prelude/struct.Tracked.html#method.view
 // TODO: ask Eric, marking this struct as `tracked` was causing the error
+#[verifier::reject_recursive_types(A)]
 pub struct MuxAlarmState<'a, A: Alarm<'a>> {
     // TODO: need virtual alarms state and virtual alarms Seq
-    pub virtual_alarm_states_seq: Seq<VirtualMuxAlarmState<'a, A>>,
-    pub virtual_alarms: GhostState<'a, VirtualMuxAlarm<'a, A>>,
+    pub virtual_alarm_states_seq: Ghost<Seq<VirtualMuxAlarmState<'a, A>>>,
+    pub virtual_alarms: Option<GhostState<'a, VirtualMuxAlarm<'a, A>>>, // TODO:removed
     /// NUMBER of virtual alarms that are currently enabled.
     // pub tracked enabled: int,
     pub enabled: PointsTo<usize>,
@@ -354,16 +354,17 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
         let (firing , Tracked(firing_perm)) = PCell::new(false);
         let (next_tick_vals , Tracked(next_tick_vals_perm)) = PCell::new(None);
         let (virtual_alarms, Tracked(virtual_alarms_perm)) = ListV::new();
+        let seq = Ghost(Seq::empty());
 
         MuxAlarm {
-            virtual_alarms: virtual_alarms,
+            virtual_alarms: Some(virtual_alarms),
             enabled: enabled,
             alarm,
             firing: firing,
             next_tick_vals: next_tick_vals,
             state: Tracked(MuxAlarmState {
-                virtual_alarm_states_seq: Seq::empty(),
-                virtual_alarms: virtual_alarms_perm,
+                virtual_alarm_states_seq: seq,
+                virtual_alarms: Some(virtual_alarms_perm),
                 enabled: enabled_perm,
                 alarm,
                 firing: firing_perm,
