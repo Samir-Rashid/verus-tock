@@ -22,12 +22,18 @@ impl<'a, T: ?Sized> ListLinkV<'a, T> {
 }
 
 pub trait ListNodeV<'a, T: ?Sized> {
-    fn next(&'a self, next_points_to: Tracked<&PointsTo<Option<&'a T>>>) -> (res: &'a ListLinkV<
+    fn next(&'a self, next_points_to: Tracked<&PointsTo<Option<&'a T>>>) -> (result: &'a ListLinkV<
         'a,
         T,
-    >)
+    >) 
+       requires
+            // TODO: `requires` clause is messed up due to trait implementation
+            // self.next.is_some(),
+            next_points_to@.is_init(),
+            // next_points_to@.id() == self.next.as_ref().unwrap().0.id(),
+            // This implies self.state@.next.id() == self.next.as_ref().unwrap().0.id() if perm comes from self.state@.next
         ensures
-            res.0.id() == next_points_to@.id(),
+            result.0.id() == next_points_to@.id(),
     ;
 }
 
