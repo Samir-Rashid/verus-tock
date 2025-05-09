@@ -152,16 +152,9 @@ impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
             // self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(self.mux.state@.virtual_alarms.unwrap())),
             // old(self.mux.state@.virtual_alarms.unwrap()@.cells.len()) + 1 == self.mux.state@.virtual_alarms.unwrap()@.cells.len(),
     {
-        let tracked mut arg0 = (self.mux.state.get().virtual_alarms);
-        let tracked mut arg1 = arg0; // this line works as expected, but wrong type as I need to get it out of the Option
-        // let tracked mut arg1 = arg0.unwrap(); // error: expression has mode spec, expected mode proof
-        /* // not sure how to do it this way
-        let tracked mut arg1 = match arg0 {
-            Some(v) => v,
-            None => //unreachable!(),
-        };  */
-        let tracked mut arg2 = Tracked(arg1);
-        self.mux.virtual_alarms.unwrap().push_head(self, Tracked(self.state@.next), &mut (arg2));
+        let tracked mut arg0 = (self.mux.state.get().virtual_alarms_state);
+        let mut arg1 = Tracked(arg0);
+        self.mux.virtual_alarms.unwrap().push_head(self, Tracked(self.state@.next), &mut (arg1));
     }
 }
 
@@ -201,15 +194,15 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
             //    self.mux.state@.enabled.value() == old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) - 1,
             // If old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) == 1 and self was armed, underlying alarm is disarmed.
     {
-        if !self.armed.into_inner(Tracked(self.state@.armed)) {
+        if !self.armed.into_inner(Tracked(self.state.get().armed)) {
             return Ok(());
         }
 
-        let mut perms = self.state.get().armed;
+        let tracked mut perms = self.state.get().armed;
         self.armed.put(Tracked(&mut perms), false);
 
-        let enabled = self.mux.enabled.into_inner(Tracked(self.mux.state@.enabled)) - 1;
-        let mut perms = self.mux.state@.enabled;
+        let enabled = self.mux.enabled.into_inner(Tracked(self.mux.state.get().enabled_perm)) - 1;
+        let tracked mut perms = self.mux.state.get().enabled_perm;
         self.mux.enabled.put(Tracked(&mut perms), enabled);
 
         // If there are not more enabled alarms, disable the underlying alarm
@@ -223,8 +216,9 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
     fn is_armed(&self) -> (result: bool)
         // requires
         //     self.state@.armed.is_init() && self.state@.armed.id() == self.armed.id(),
-        ensures
-            result == self.armed.borrow(Tracked(&self.state@.armed)),
+        // TODO: THIS IS TRACKED INCORRECTLY, I need to store the mathematical representation of armed in state
+        // ensures
+        //     result == self.state@.armed(Tracked(self.state@.armed)),
     {
         self.armed.into_inner(Tracked(self.state@.armed))
     }
@@ -242,7 +236,7 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
             // armed status, mux.enabled count, and potentially calling self.mux.set_alarm.
             true, // For current no-op implementation
     {
-        let enabled = self.mux.enabled.into_inner(Tracked(self.mux.state@.enabled));
+        let enabled = self.mux.enabled.into_inner(Tracked(self.mux.state@.enabled_perm));
         let half_max = Self::Ticks::half_max_value();
         // If the dt is more than half of the available time resolution, then we need to break
         // up the alarm into two internal alarms. This ensures that our internal comparisons of
@@ -276,7 +270,7 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
         let mut perm = self.state@.armed;
         match self.armed.replace(Tracked(&mut perm), true){
             false => {
-                let mut perm = self.mux.state@.enabled;
+                let mut perm = self.mux.state@.enabled_perm;
                 self.mux.enabled.put(Tracked(&mut perm), enabled + 1);
             }
             true => {} // Already armed, do nothing 
@@ -286,7 +280,7 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
         if enabled == 0 {
             //debug!("virtual_alarm: first alarm: set it.");
             self.mux.set_alarm(reference, dt);
-        } else if !self.mux.firing.into_inner(Tracked(self.mux.state@.firing)) {
+        } else if !self.mux.firing.into_inner(Tracked(self.mux.state@.firing_perm)) {
             // If firing is true, the mux will scan all the alarms after
             // firing and pick the soonest one so do not need to modify the
             // mux. Otherwise, this is an alarm
@@ -304,7 +298,7 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
             let now = self.mux.alarm.now();
             let expiration = reference.wrapping_add(dt);
             if !cur_alarm.within_range(reference, expiration) {
-                let next = self.mux.next_tick_vals.into_inner(Tracked(self.mux.state@.next_tick_vals));
+                let next = self.mux.next_tick_vals.into_inner(Tracked(self.mux.state@.next_tick_vals_perm));
 
                 let cond = match next {
                     None => true,
@@ -380,6 +374,20 @@ pub struct MuxAlarm<'a, A: Alarm<'a>> {
     pub state: Tracked<MuxAlarmState<'a, A>>,
 }
 
+// Keep track of the single, real, physical alarm.
+#[verifier::reject_recursive_types(A)]
+pub struct MuxAlarmState<'a, A: Alarm<'a>> {
+    pub virtual_alarm_states_seq: Ghost<Seq<VirtualMuxAlarmState<'a, A>>>,
+    pub virtual_alarms_state: GhostState<'a, VirtualMuxAlarm<'a, A>>,
+    /// NUMBER of virtual alarms that are currently enabled.
+    pub enabled_perm: PointsTo<usize>,
+    pub alarm: &'a A,
+    pub firing_perm: PointsTo<bool>,
+    pub next_tick_vals_perm: PointsTo<Option<(A::Ticks, A::Ticks)>>,
+    /// tick value of firing: ref + dt % ticks width
+    pub fire_time: Option<A::Ticks>,
+}
+
 // returns spec mode
 impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
     type V = Tracked<MuxAlarmState<'a, A>>;
@@ -391,37 +399,22 @@ impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
     }
 }
 
-// Keep track of the single, real, physical alarm.
-#[verifier::reject_recursive_types(A)]
-pub struct MuxAlarmState<'a, A: Alarm<'a>> {
-    pub virtual_alarm_states_seq: Ghost<Seq<VirtualMuxAlarmState<'a, A>>>,
-    pub virtual_alarms: Option<GhostState<'a, VirtualMuxAlarm<'a, A>>>,
-    /// NUMBER of virtual alarms that are currently enabled.
-    pub enabled: PointsTo<usize>,
-    pub alarm: &'a A,
-    pub firing: PointsTo<bool>,
-    pub next_tick_vals: PointsTo<Option<(A::Ticks, A::Ticks)>>,
-    /// tick value of firing: ref + dt % ticks width
-    pub fire_time: Option<A::Ticks>,
-}
-
 impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
     pub const fn new(alarm_ref: &'a A) -> (res:MuxAlarm<'a, A>)
         requires
             true, // alarm_ref is a valid reference
         ensures
-            res@@.enabled.value() == 0,
-            res@@.enabled.id() == res.enabled.id(),
-            res@@.firing.value() == false,
-            res@@.firing.id() == res.firing.id(),
-            res@@.next_tick_vals.value().is_none(), // Option<(A::Ticks, A::Ticks)>
-            res@@.next_tick_vals.id() == res.next_tick_vals.id(),
-            res@@.enabled.is_init(),
-            res@@.firing.is_init(),
-            res@@.next_tick_vals.is_init(),
-            res.next_tick_vals.id() === res@@.next_tick_vals@.pcell,
+            res@@.enabled_perm.value() == 0,
+            res@@.enabled_perm.id() == res.enabled.id(),
+            res@@.firing_perm.value() == false,
+            res@@.firing_perm.id() == res.firing.id(),
+            res@@.next_tick_vals_perm.value().is_none(), // Option<(A::Ticks, A::Ticks)>
+            res@@.next_tick_vals_perm.id() == res.next_tick_vals.id(),
+            res@@.enabled_perm.is_init(),
+            res@@.firing_perm.is_init(),
+            res@@.next_tick_vals_perm.is_init(),
+            res.next_tick_vals.id() === res@@.next_tick_vals_perm@.pcell,
             res.virtual_alarms.is_some(),
-            res@@.virtual_alarms.is_some(),
             // res.virtual_alarms.as_ref().unwrap().well_formed_list(&res@@.virtual_alarms.unwrap()), // Assuming ListV::new ensures this
             res@@.virtual_alarm_states_seq@.len() == 0,
             res@@.alarm == alarm_ref,
@@ -441,12 +434,12 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
             next_tick_vals: next_tick_vals,
             state: Tracked(MuxAlarmState {
                 virtual_alarm_states_seq: seq,
-                virtual_alarms: Some(virtual_alarms_perm),
-                enabled: enabled_perm,
+                virtual_alarms_state: (virtual_alarms_perm),
+                enabled_perm,
                 alarm: alarm_ref,
-                firing: firing_perm,
+                firing_perm,
                 fire_time: None,
-                next_tick_vals: next_tick_vals_perm,
+                next_tick_vals_perm,
             }),
         }
     }
@@ -458,33 +451,33 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
             // Any other preconditions from original Tock logic, e.g., dt >= minimum_dt
         ensures
             // self@@.next_tick_vals.id() === old(&mut self@@).next_tick_vals.id(), // ID remains same
-            self.next_tick_vals.id() === self@@.next_tick_vals@.pcell, // ID matches ghost state
-            self@@.next_tick_vals.is_init(), // Still initialized
-            self@@.next_tick_vals.value().is_some(),
-            self@@.next_tick_vals.value().unwrap().0.get_value() == reference.get_value(),
-            self@@.next_tick_vals.value().unwrap().1.get_value() == dt.get_value(),
+            self.next_tick_vals.id() === self@@.next_tick_vals_perm@.pcell, // ID matches ghost state
+            self@@.next_tick_vals_perm.is_init(), // Still initialized
+            self@@.next_tick_vals_perm.value().is_some(),
+            self@@.next_tick_vals_perm.value().unwrap().0.get_value() == reference.get_value(),
+            self@@.next_tick_vals_perm.value().unwrap().1.get_value() == dt.get_value(),
             // Underlying hardware alarm self.alarm might be set
     {
-        let tracked mut perms = self.state.get().next_tick_vals;
+        let tracked mut perms = self.state.get().next_tick_vals_perm;
         self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
         // TODO: self.alarm.set_alarm(...) call and its state modeling
     }
 
     pub fn disarm(&self)
         requires
-            self.next_tick_vals.id() === self@@.next_tick_vals@.pcell,
-            self@@.next_tick_vals.is_init(),
+            self.next_tick_vals.id() === self@@.next_tick_vals_perm@.pcell,
+            self@@.next_tick_vals_perm.is_init(),
             // self.alarm is valid for disarm call,
         ensures
             // self.next_tick_vals.id() === old(self).next_tick_vals.id(),
-            self.next_tick_vals.id() === self@@.next_tick_vals@.pcell,
-            self@@.next_tick_vals.is_init(),
-            self@@.next_tick_vals.value().is_none(),
+            self.next_tick_vals.id() === self@@.next_tick_vals_perm@.pcell,
+            self@@.next_tick_vals_perm.is_init(),
+            self@@.next_tick_vals_perm.value().is_none(),
             // self.alarm.disarm() implies the underlying alarm is no longer armed.
             // The Result<(), ErrorCode> from self.alarm.disarm() is Ok(()).
             true, // Placeholder for result of self.alarm.disarm()
     {
-        let tracked mut perms = self.state.get().next_tick_vals;
+        let tracked mut perms = self.state.get().next_tick_vals_perm;
         self.next_tick_vals.write(Tracked(&mut perms), None);
         let _ = self.alarm.disarm();
     }
