@@ -152,8 +152,16 @@ impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
             // self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(self.mux.state@.virtual_alarms.unwrap())),
             // old(self.mux.state@.virtual_alarms.unwrap()@.cells.len()) + 1 == self.mux.state@.virtual_alarms.unwrap()@.cells.len(),
     {
-        let tracked mut arg = (self.mux.state.get().virtual_alarms.unwrap());
-        self.mux.virtual_alarms.as_ref().unwrap().push_head(self, Tracked(self.state@.next), &mut (arg));
+        let tracked mut arg0 = (self.mux.state.get().virtual_alarms);
+        let tracked mut arg1 = arg0; // this line works as expected, but wrong type as I need to get it out of the Option
+        // let tracked mut arg1 = arg0.unwrap(); // error: expression has mode spec, expected mode proof
+        /* // not sure how to do it this way
+        let tracked mut arg1 = match arg0 {
+            Some(v) => v,
+            None => //unreachable!(),
+        };  */
+        let tracked mut arg2 = Tracked(arg1);
+        self.mux.virtual_alarms.unwrap().push_head(self, Tracked(self.state@.next), &mut (arg2));
     }
 }
 
