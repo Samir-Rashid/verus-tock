@@ -25,7 +25,7 @@ pub trait ListNodeV<'a, T: ?Sized> {
     fn next(&'a self, next_points_to: Tracked<&PointsTo<Option<&'a T>>>) -> (result: &'a ListLinkV<
         'a,
         T,
-    >) 
+    >)
        requires
             // TODO: `requires` clause is messed up due to trait implementation
             // self.next.is_some(),

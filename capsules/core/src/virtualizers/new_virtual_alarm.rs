@@ -18,7 +18,6 @@ use core::cmp::Ordering;
 use core::fmt;
 use kernel::ErrorCode;
 // spec_saturating_sub
-use core::cell::Cell;
 // use kernel::collections::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
 use super::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
 // use kernel::hil::time::{ex_saturatingsub, ExErrorCode, ExOrdering};
@@ -71,9 +70,9 @@ pub struct VirtualMuxAlarm<'a, A: Alarm<'a>> {
 
 #[verifier::reject_recursive_types(A)]
 pub struct VirtualMuxAlarmState<'a, A: Alarm<'a>> {
-    pub dt_reference: PointsTo<TickDtReference<A::Ticks>>,
-    pub armed: PointsTo<bool>,
-    pub next: PointsTo<Option<&'a VirtualMuxAlarm<'a, A>>>,
+    pub dt_reference_perm: PointsTo<TickDtReference<A::Ticks>>,
+    pub armed_perm: PointsTo<bool>,
+    pub next_perm: PointsTo<Option<&'a VirtualMuxAlarm<'a, A>>>,
 }
 
 impl<'a, A: Alarm<'a>> ListNodeV<'a, VirtualMuxAlarm<'a, A>> for VirtualMuxAlarm<'a, A> {
@@ -102,18 +101,18 @@ impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
             true, // mux_alarm is a valid reference
         ensures
             res.mux == mux_alarm,
-            res.state@.dt_reference.id() == res.dt_reference.id(),
-            res.state@.dt_reference.is_init(),
+            res.state@.dt_reference_perm.id() == res.dt_reference.id(),
+            res.state@.dt_reference_perm.is_init(),
             // res.state@.dt_reference.value().reference.get_value() == A::Ticks::from(0).get_value(),
             // res.state@.dt_reference.value().dt.get_value() == A::Ticks::from(0).get_value(),
-            res.state@.dt_reference.value().extended == false,
-            res.state@.armed.id() == res.armed.id(),
-            res.state@.armed.is_init(),
-            res.state@.armed.value() == false,
+            res.state@.dt_reference_perm.value().extended == false,
+            res.state@.armed_perm.id() == res.armed.id(),
+            res.state@.armed_perm.is_init(),
+            res.state@.armed_perm.value() == false,
             res.next.is_some(),
             // res.state@.next.id() == res.next.as_ref().unwrap().0.id(),
-            res.state@.next.is_init(),
-            res.state@.next.value().is_none(),
+            res.state@.next_perm.is_init(),
+            res.state@.next_perm.value().is_none(),
             // res.client is initialized by ClientCounter::new()
     {
         let zero = A::Ticks::from(0);
@@ -133,9 +132,9 @@ impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
             next: Some(list_link),
             client: &ClientCounter::new(),
             state: Tracked(VirtualMuxAlarmState {
-                dt_reference: dt_reference_perm,
-                armed: armed_perm,
-                next: list_link_perm,
+                dt_reference_perm,
+                armed_perm,
+                next_perm: list_link_perm,
             }),
         }
     }
@@ -146,7 +145,7 @@ impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
         requires
             self.mux.virtual_alarms.is_some(),
             // self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(self.mux.state@.virtual_alarms.unwrap())), // If adding to list
-            self.state@.next.is_init(), // Permission for self.next
+            self.state@.next_perm.is_init(), // Permission for self.next
         // ensures
             // If it modified the list:
             // self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(self.mux.state@.virtual_alarms.unwrap())),
@@ -154,7 +153,7 @@ impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
     {
         let tracked mut arg0 = self.mux.state.get().virtual_alarms_state.tracked_unwrap();
         let mut arg1 = Tracked(arg0);
-        self.mux.virtual_alarms.unwrap().push_head(self, Tracked(self.state.get().next), &mut (arg1));
+        self.mux.virtual_alarms.unwrap().push_head(self, Tracked(self.state.get().next_perm), &mut (arg1));
     }
 }
 
@@ -189,16 +188,16 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
         ensures
             // Assuming the commented out logic:
             result == Ok::<(), ErrorCode>(()),
-            self.state@.armed.value() == false,
+            self.state@.armed_perm.value() == false,
             // (old(self.armed.borrow(Tracked(&self.state@.armed))) && old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) > 0) ==>
             //    self.mux.state@.enabled.value() == old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) - 1,
             // If old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) == 1 and self was armed, underlying alarm is disarmed.
     {
-        if !self.armed.into_inner(Tracked(self.state.get().armed)) {
+        if !self.armed.into_inner(Tracked(self.state.get().armed_perm)) {
             return Ok(());
         }
 
-        let tracked mut perms = self.state.get().armed;
+        let tracked mut perms = self.state.get().armed_perm;
         self.armed.put(Tracked(&mut perms), false);
 
         let enabled = self.mux.enabled.into_inner(Tracked(self.mux.state.get().enabled_perm)) - 1;
@@ -220,10 +219,10 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
         // ensures
         //     result == self.state@.armed(Tracked(self.state@.armed)),
     {
-        self.armed.into_inner(Tracked(self.state.get().armed))
+        self.armed.into_inner(Tracked(self.state.get().armed_perm))
     }
 
-    fn set_alarm(&mut self, reference: Self::Ticks, dt: Self::Ticks)
+    fn set_alarm(&self, reference: Self::Ticks, dt: Self::Ticks)
         // requires
         //     self.state@.dt_reference.is_init() && self.state@.dt_reference.id() == self.dt_reference.id(),
         //     self.state@.armed.is_init() && self.state@.armed.id() == self.armed.id(),
@@ -262,18 +261,18 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
             }
         };
         */
-        let tracked mut perm = self.state.get().dt_reference;
+        let tracked mut perm = self.state.get().dt_reference_perm;
         self.dt_reference.put(Tracked(&mut perm), dt_reference);
         // Ensure local variable has correct value when used below
         let dt = dt_reference.dt;
 
-        let tracked mut perm = self.state.get().armed;
+        let tracked mut perm = self.state.get().armed_perm;
         match self.armed.replace(Tracked(&mut perm), true){
             false => {
                 let tracked mut perm = self.mux.state.get().enabled_perm;
                 self.mux.enabled.put(Tracked(&mut perm), enabled + 1);
             }
-            true => {} // Already armed, do nothing 
+            true => {} // Already armed, do nothing
         }
 
         // First alarm, so set it
@@ -323,7 +322,7 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
             // result.get_value() == Self::Ticks::from(0).get_value(), // For current dummy implementation
     {
             // Self::Ticks::from(0) // TODO: dummy value, delete
-        let dt_reference = self.dt_reference.into_inner(Tracked(self.state.get().dt_reference));
+        let dt_reference = self.dt_reference.into_inner(Tracked(self.state.get().dt_reference_perm));
         let extension = if dt_reference.extended {
             Self::Ticks::half_max_value()
         } else {
@@ -350,8 +349,6 @@ impl<'a, A: Alarm<'a>> AlarmClient for VirtualMuxAlarm<'a, A> {
         // ensures
             // self.client.count() might have changed if alarm was called
     {
-        // TODO:!!!!!!!
-        // self.client.map(|client| client.alarm());
         self.client.alarm();
     }
 }
@@ -444,7 +441,7 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
         }
     }
 
-    pub fn set_alarm(&mut self, reference: A::Ticks, dt: A::Ticks)
+    pub fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks)
         // requires
             // self.next_tick_vals.id() === self@@.next_tick_vals@.pcell,
             // self@@.next_tick_vals.is_init(),
@@ -461,6 +458,7 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
         let tracked mut perms = self.state.get().next_tick_vals_perm;
         self.next_tick_vals.write(Tracked(&mut perms), Some((reference, dt)));
         // TODO: self.alarm.set_alarm(...) call and its state modeling
+        self.alarm.set_alarm(reference, dt);
     }
 
     pub fn disarm(&self)
@@ -486,7 +484,6 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
 impl<'a, A: Alarm<'a>> AlarmClient for MuxAlarm<'a, A> {
     /// When the underlying alarm has fired, we have to multiplex this event back to the virtual
     /// alarms that should now fire.
-    // TODO: the buffer that we need to handle may not be bounded here? There can
     fn alarm(&self)
         // requires
         //     self@@.firing.is_init() && self@@.firing.id() == self.firing.id(),
@@ -500,107 +497,118 @@ impl<'a, A: Alarm<'a>> AlarmClient for MuxAlarm<'a, A> {
             // updating self@@.enabled, and then re-evaluating the next alarm for self.alarm.
             // self@@.firing is false at the end.
     {
-        // // Check whether to fire each alarm. At this level, alarms are one-shot,
-        // // so a repeating client will set it again in the alarm() callback.
-        // self.firing.set(true);
-        // let tracked mut perms = self.state.get().firing;
-        // self.firing.write(Tracked(&mut perms), false);
-        // let mut iterator = ListIteratorV { cur: self.virtual_alarms.head() };
+        // Check whether to fire each alarm. At this level, alarms are one-shot,
+        // so a repeating client will set it again in the alarm() callback.
+        let tracked mut perm = self.state.get().firing_perm;
+        self.firing.put(Tracked(&mut perm), true);
+        let tracked mut perms = self.state.get().firing_perm;
+        self.firing.write(Tracked(&mut perms), false);
+        let mut iterator = ListIteratorV::new(
+            &(self.virtual_alarms).unwrap(),
+        &Tracked(self.state.get().virtual_alarms_state.tracked_unwrap()));
+
         // for cur in self.virtual_alarms.iter() {
         // while let Some(cur) = current {
-        // loop {
-        //     match iterator.next() {
-        //         Some(cur) => {
-        //             let dt_ref = cur.dt_reference.get();
-        //             let now = self.alarm.now();
-        //             if cur.armed.get() && !now.within_range(
-        //                 dt_ref.reference,
-        //                 dt_ref.reference_plus_dt(),
-        //             ) {
-        //                 if dt_ref.extended {
-        //                     cur.dt_reference.set(
-        //                         TickDtReference {
-        //                             reference: dt_ref.reference_plus_dt(),
-        //                             dt: A::Ticks::half_max_value(),
-        //                             extended: false,
-        //                         },
-        //                     );
-        //                 } else {
-        //                     cur.armed.set(false); // TODO:
-        //                     // VERUS-TODO uncomment the following line and prove the lack of overflow
-        //                     self.enabled.set(self.enabled.get() - 1);
-        //                     cur.alarm(); // TODO: important line
-        //                 }
-        //             }
-        //         },
-        //         None => break ,
-        //     }
-        //     // let mut current = self.virtual_alarms.head();
+        loop {
+            match iterator.next(&Tracked(self.state.get().virtual_alarms_state.tracked_unwrap())) {
+                Some(cur) => {
+                    let dt_ref = cur.dt_reference.into_inner(Tracked(cur.state.get().dt_reference_perm));
+                    let now = self.alarm.now();
+                    if cur.armed.into_inner(Tracked(cur.state.get().armed_perm)) && !now.within_range(
+                        dt_ref.reference,
+                        dt_ref.reference_plus_dt(),
+                    ) {
+                        if dt_ref.extended {
+                            let tracked mut perm = cur.state.get().dt_reference_perm;
+                            cur.dt_reference.put(Tracked(&mut perm),
+                                TickDtReference {
+                                    reference: dt_ref.reference_plus_dt(),
+                                    dt: A::Ticks::half_max_value(),
+                                    extended: false,
+                                },
+                            );
+                        } else {
+                            let tracked mut perm = cur.state.get().armed_perm;
+                            cur.armed.put(Tracked(&mut perm), false);
+                            let tracked mut perm = self.state.get().enabled_perm;
+                            self.enabled.put(Tracked(&mut perm), self.enabled.into_inner(Tracked(self.state.get().enabled_perm)) - 1);
 
-        // }
-        // self.firing.set(false);
-        // // Find the soonest alarm client (if any) and set the "next" underlying
-        // // alarm based on it.  This needs to happen after firing all expired
-        // // alarms since those may have reset new alarms.
-        // let now = self.alarm.now();
-        // // let next = self
-        // //     .virtual_alarms
-        // //     .iter()
-        // //     .filter(|cur| cur.armed.get())
-        // //     .min_by_key(|cur| {
-        // //         let when = cur.dt_reference.get();
-        // //         // If the alarm has already expired, then it should be
-        // //         // considered as the earliest possible (0 ticks), so it
-        // //         // will trigger as soon as possible. This can happen
-        // //         // if the alarm expired *after* it was examined in the
-        // //         // above loop.
-        // //         if !now.within_range(when.reference, when.reference_plus_dt()) {
-        // //             A::Ticks::from(0u32)
-        // //         } else {
-        // //             when.reference_plus_dt().wrapping_sub(now)
-        // //         }
-        // //     })
-        // let mut iterator = ListIteratorV { cur: self.virtual_alarms.head() };
-        // let mut min_ticks = None;
-        // let mut min_alarm = None;
+                            cur.alarm();
+                        }
+                    }
+                },
+                None => break,
+            }
+            // let mut current = self.virtual_alarms.head();
 
-        // loop {
-        //     match iterator.next() {
-        //         Some(cur) => {
-        //             if cur.armed.get() {
-        //                 let when = cur.dt_reference.get();
-        //                 let ticks = if !now.within_range(when.reference, when.reference_plus_dt()) {
-        //                     A::Ticks::from_or_max(0u64)
-        //                 } else {
-        //                     when.reference_plus_dt().wrapping_sub(now)
-        //                 };
+        }
+        let tracked mut perm = self.state.get().firing_perm;
+        self.firing.put(Tracked(&mut perm), false);
+        
+        // Find the soonest alarm client (if any) and set the "next" underlying
+        // alarm based on it.  This needs to happen after firing all expired
+        // alarms since those may have reset new alarms.
+        let now = self.alarm.now();
+        // let next = self
+        //     .virtual_alarms
+        //     .iter()
+        //     .filter(|cur| cur.armed.get())
+        //     .min_by_key(|cur| {
+        //         let when = cur.dt_reference.get();
+        //         // If the alarm has already expired, then it should be
+        //         // considered as the earliest possible (0 ticks), so it
+        //         // will trigger as soon as possible. This can happen
+        //         // if the alarm expired *after* it was examined in the
+        //         // above loop.
+        //         if !now.within_range(when.reference, when.reference_plus_dt()) {
+        //             A::Ticks::from(0u32)
+        //         } else {
+        //             when.reference_plus_dt().wrapping_sub(now)
+        //         }
+        //     })
+        let mut iterator = ListIteratorV::new(
+            &(self.virtual_alarms).unwrap(),
+        &Tracked(self.state.get().virtual_alarms_state.tracked_unwrap()));
+        let mut min_ticks = None;
+        let mut min_alarm = None;
 
-        //                 match min_ticks {
-        //                     None => {
-        //                         min_ticks = Some(ticks);
-        //                         min_alarm = Some(cur);
-        //                     },
-        //                     Some(min) if ticks.into_usize() < min.into_usize() => {
-        //                         min_ticks = Some(ticks);
-        //                         min_alarm = Some(cur);
-        //                     },
-        //                     _ => {},
-        //                 }
-        //             }
-        //         },
-        //         None => break ,
-        //     }
-        // }
+        loop {
+            match iterator.next(&Tracked(self.state.get().virtual_alarms_state.tracked_unwrap())) {
+                Some(cur) => {
+                    if cur.armed.into_inner(Tracked(cur.state.get().armed_perm)) {
+                        let when = cur.dt_reference.into_inner(Tracked(cur.state.get().dt_reference_perm));
+                        let ticks = if !now.within_range(when.reference, when.reference_plus_dt()) {
+                            A::Ticks::from_or_max(0u64)
+                        } else {
+                            when.reference_plus_dt().wrapping_sub(now)
+                        };
 
-        // let next = min_alarm;
+                        match min_ticks {
+                            None => {
+                                min_ticks = Some(ticks);
+                                min_alarm = Some(cur);
+                            },
+                            Some(min) if ticks.into_usize() < min.into_usize() => {
+                                min_ticks = Some(ticks);
+                                min_alarm = Some(cur);
+                            },
+                            _ => {},
+                        }
+                    }
+                },
+                None => break ,
+            }
+        }
 
-        // // Set the alarm.
-        // if let Some(valrm) = next {
-        //     let dt_reference = valrm.dt_reference.get();
-        //     self.set_alarm(dt_reference.reference, dt_reference.dt);
-        // } else {
-        //     self.disarm();
-        // }
+        let next = min_alarm;
+
+        // Set the alarm.
+        if let Some(valrm) = next {
+            let dt_reference = valrm.dt_reference.into_inner(Tracked(valrm.state.get().dt_reference_perm));
+            self.set_alarm(dt_reference.reference, dt_reference.dt);
+        } else {
+            self.disarm();
+        }
     }
 }
 
@@ -1043,8 +1051,6 @@ pub trait AlarmClient {
     /// MUST be disabled when this is called. If a new alarm is needed,
     /// the client can call `Alarm::set_alarm`.
     fn alarm(&self)
-        requires true, // self is valid
-        ensures true, // Describes side-effects, specific to implementation
     ;
 }
 
@@ -1073,7 +1079,7 @@ pub trait Alarm<'a>: Time {
     // PRECONDITION: current alarm is soonest
     // POSTCONDITION: current alarm is soonest
     // TODO: add asserts in the code and show that we want to show are met
-    fn set_alarm(&mut self, reference: Self::Ticks, dt: Self::Ticks)
+    fn set_alarm(&self, reference: Self::Ticks, dt: Self::Ticks)
         // requires
         //     dt.get_value() >= self.minimum_dt().get_value(), // dt must be sufficient
         // ensures
@@ -1419,7 +1425,7 @@ pub struct FakeAlarm<'a> {
 }
 
 impl<'a> FakeAlarm<'a> {
-    fn new() -> (result: Self)
+    fn new(client: &ClientCounter) -> (result: Self)
         ensures
             result.now_perm@.mem_contents().value().ticks == 1_000,
             result.reference_perm@.mem_contents().value().ticks == 0,
@@ -1431,8 +1437,7 @@ impl<'a> FakeAlarm<'a> {
         let (reference, Tracked(reference_perm)) = PCell::new(0u32.into());
         let (dt, Tracked(dt_perm)) = PCell::new(0u32.into());
         let (armed, Tracked(armed_perm)) = PCell::new(false);
-        let client = ClientCounter::new();
-
+        // let client = ClientCounter::new();
 
         Self {
             now: now,
@@ -1551,7 +1556,7 @@ impl<'a> Alarm<'a> for FakeAlarm<'a> {
     //     self.client.set(client);
     // }
 
-    fn set_alarm(&mut self, reference: Self::Ticks, dt: Self::Ticks)
+    fn set_alarm(&self, reference: Self::Ticks, dt: Self::Ticks)
         ensures
             self.reference_perm@.mem_contents().value().ticks == reference.ticks,
             self.dt_perm@.mem_contents().value().ticks == dt.ticks,
@@ -1657,15 +1662,22 @@ fn run_until_disarmed(alarm: &FakeAlarm)
 fn main()
 {
     {
-        let client_ref = ClientCounter::new(); // TODO: alarm needs to use this client
-        let alarm = FakeAlarm::new();
+        let client= ClientCounter::new(); // TODO: alarm needs to use this client
+        let alarm = FakeAlarm::new(&client);
 
-        let mux_alarm_instance = MuxAlarm::new(&alarm);
+        let mut mux_alarm = MuxAlarm::new(&alarm);
 
-        // If the intention is that `mux_alarm_instance` is the client to `alarm`:
-        // Then `alarm.client` should be `&mux_alarm_instance`.
-        // And `mux_alarm_instance.alarm()` would be called.
-        // This would then iterate `VirtualMuxAlarm`s (if any) and call their `alarm()` methods.
+        mux_alarm.set_alarm(alarm.now(), Ticks32::from(10));
+        run_until_disarmed(&alarm); // local_alarm is likely not armed by the above.
+
+        let fired_count = client.count(); // This will be 0.
+        proof{
+            // This assertion will likely fail with current code structure as `fired_count` is 0.
+            // To make it 1, `local_client_counter_for_assertion.alarm()` must be called.
+            assert(fired_count == 1);
+            assert(fired_count == 0); // Based on current logic.
+        }
+
 
         // Let's assume the test means:
         // 1. Create a physical alarm `alarm_phys = FakeAlarm::new()`.
@@ -1702,6 +1714,7 @@ fn main()
         // The provided test code is for illustration and may not pass without further refinement
         // of both the main code and the test logic.
         // For the purpose of adding requires/ensures, I will assume the functions are called as is.
+        /*
         let local_alarm = FakeAlarm::new();
         let local_client_counter_for_assertion = ClientCounter::new(); // This client is not used by local_alarm
 
@@ -1714,9 +1727,10 @@ fn main()
         proof{
             // This assertion will likely fail with current code structure as `fired_count` is 0.
             // To make it 1, `local_client_counter_for_assertion.alarm()` must be called.
-            // assert(fired_count == 1);
+            assert(fired_count == 1);
             assert(fired_count == 0); // Based on current logic.
         }
+        */
     }
 }
 } // verus!
