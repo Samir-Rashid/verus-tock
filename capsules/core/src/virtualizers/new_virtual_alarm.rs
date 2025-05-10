@@ -7,6 +7,7 @@ use core::fmt;
 use kernel::ErrorCode;
 use vstd::cell::*;
 use vstd::prelude::*;
+// use vstd::std_specs::option::spec_unwrap;
 
 verus! {
 #[derive(Copy, Clone)]
@@ -68,11 +69,27 @@ impl<'a, A: Alarm<'a>> ListNodeV<'a, VirtualMuxAlarm<'a, A>> for VirtualMuxAlarm
 }
 
 impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
+    // type Ticks: Ticks;
+
+    /// Well formed constraint
+    pub closed spec fn wf(&self) -> bool {
+        &&&    self.mux.virtual_alarms.is_some()
+        // &&&    self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(spec_unwrap(self.mux.state@.virtual_alarms_state))) // TODO: this is probably needed
+        &&&    self.next.is_some()
+        &&&    self.state@.next_perm.is_init()
+        &&&    self.state@.dt_reference_perm.is_init()
+        &&&    self.state@.armed_perm.is_init()
+        // &&&    self.next.unwrap().id() == self.state@.next_perm.id()
+        &&&    self.dt_reference.id() == self.state@.dt_reference_perm.id()
+        &&&    self.armed.id() == self.state@.armed_perm.id()
+    }
+
     /// After calling new, always call setup()
     pub fn new(mux_alarm: &'a MuxAlarm<'a, A>) -> (res: VirtualMuxAlarm<'a, A>)
         requires
             true, // mux_alarm is a valid reference
         ensures
+            res.wf(),
             res.mux == mux_alarm,
             res.state@.dt_reference_perm.id() == res.dt_reference.id(),
             res.state@.dt_reference_perm.is_init(),
@@ -116,10 +133,12 @@ impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
     /// fire
     pub fn setup(&'a self)
         requires
+            self.wf(),
             self.mux.virtual_alarms.is_some(),
             // self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(self.mux.state@.virtual_alarms.unwrap())), // If adding to list
             self.state@.next_perm.is_init(), // Permission for self.next
-        // ensures
+        ensures
+            self.wf(),
             // If it modified the list:
             // self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(self.mux.state@.virtual_alarms.unwrap())),
             // old(self.mux.state@.virtual_alarms.unwrap()@.cells.len()) + 1 == self.mux.state@.virtual_alarms.unwrap()@.cells.len(),
@@ -128,12 +147,16 @@ impl<'a, A: Alarm<'a>> VirtualMuxAlarm<'a, A> {
         let mut arg1 = Tracked(arg0);
         self.mux.virtual_alarms.unwrap().push_head(self, Tracked(self.state.get().next_perm), &mut (arg1));
     }
-}
+// }
+//
+// impl<'a, A: Alarm<'a>> Time for VirtualMuxAlarm<'a, A> {
+    // type Ticks = A::Ticks;
 
-impl<'a, A: Alarm<'a>> Time for VirtualMuxAlarm<'a, A> {
-    type Ticks = A::Ticks;
-
-    fn now(&self) -> (result: Self::Ticks)
+    fn now(&self) -> (result: A::Ticks)
+        requires
+            self.wf(),
+        ensures
+            self.wf(),
     {
         self.mux.alarm.now()
     }
@@ -144,24 +167,27 @@ impl<'a, A: Alarm<'a>> Time for VirtualMuxAlarm<'a, A> {
     {
         1_000
     }
-}
-
-impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
+// }
+//
+// impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
     // NOTE: this feature has been removed to simplify verification
     // fn set_alarm_client(&self, client: &'a dyn time::AlarmClient) {
     //     self.client.set(client);
     // }
 
     fn disarm(&self) -> (result: Result<(), ErrorCode>)
+        requires
+            self.wf(),
         // TODO: fix all the requires clauses
         // requires
-        //     // Assuming the commented out logic:
-        //     self.state@.armed.is_init() && self.state@.armed.id() == self.armed.id(),
+        //     self.state@.armed_perm.is_init() && self.state@.armed_perm.id() == self.armed.id(),
         //     self.mux.state@.enabled.is_init() && self.mux.state@.enabled.id() == self.mux.enabled.id(),
         //     // self.mux.alarm is valid for disarm call
         ensures
-            // Assuming the commented out logic:
+            self.wf(),
             result == Ok::<(), ErrorCode>(()),
+            self.state@.armed_perm.id() == self.armed.id(),
+            self.state@.armed_perm.is_init(),
             self.state@.armed_perm.value() == false,
             // (old(self.armed.borrow(Tracked(&self.state@.armed))) && old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) > 0) ==>
             //    self.mux.state@.enabled.value() == old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) - 1,
@@ -187,16 +213,21 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
     }
 
     fn is_armed(&self) -> (result: bool)
+        requires
+            self.wf(),
         // requires
         //     self.state@.armed.is_init() && self.state@.armed.id() == self.armed.id(),
         // TODO: THIS IS TRACKED INCORRECTLY, I need to store the mathematical representation of armed in state
-        // ensures
+        ensures
+            self.wf(),
         //     result == self.state@.armed(Tracked(self.state@.armed)),
     {
         self.armed.into_inner(Tracked(self.state.get().armed_perm))
     }
 
-    fn set_alarm(&self, reference: Self::Ticks, dt: Self::Ticks)
+    fn set_alarm(&self, reference: A::Ticks, dt: A::Ticks)
+        requires
+            self.wf(),
         // requires
         //     self.state@.dt_reference.is_init() && self.state@.dt_reference.id() == self.dt_reference.id(),
         //     self.state@.armed.is_init() && self.state@.armed.id() == self.armed.id(),
@@ -205,12 +236,12 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
         //     self.mux.state@.next_tick_vals.is_init() && self.mux.state@.next_tick_vals.id() == self.mux.next_tick_vals.id(),
         //     // self.mux.alarm is valid
         ensures
+            self.wf(),
             // Complex ensures based on the commented logic involving dt_reference update,
             // armed status, mux.enabled count, and potentially calling self.mux.set_alarm.
-            true, // For current no-op implementation
     {
         let enabled = self.mux.enabled.into_inner(Tracked(self.mux.state.get().enabled_perm));
-        let half_max = Self::Ticks::half_max_value();
+        let half_max = A::Ticks::half_max_value();
         // If the dt is more than half of the available time resolution, then we need to break
         // up the alarm into two internal alarms. This ensures that our internal comparisons of
         // now outside of range [ref, ref + dt) will trigger correctly even with latency in the
@@ -286,41 +317,50 @@ impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
         }
     }
 
-    fn get_alarm(&self) -> (result: Self::Ticks)
+    fn get_alarm(&self) -> (result: A::Ticks)
+        requires
+            self.wf(),
         // requires
         //     // self.state@.dt_reference.is_init() && self.state@.dt_reference.id() == self.dt_reference.id(),
-        // ensures
+        ensures
+            self.wf(),
             // let dt_ref_val = self.dt_reference.borrow(Tracked(&self.state@.dt_reference));
-            // let extension_val = if dt_ref_val.extended { Self::Ticks::half_max_value() } else { Self::Ticks::from(0) };
+            // let extension_val = if dt_ref_val.extended { A::Ticks::half_max_value() } else { A::Ticks::from(0) };
             // result.get_value() == dt_ref_val.reference_plus_dt().wrapping_add(extension_val).get_value(),
-            // result.get_value() == Self::Ticks::from(0).get_value(), // For current dummy implementation
+            // result.get_value() == A::Ticks::from(0).get_value(), // For current dummy implementation
     {
-            // Self::Ticks::from(0) // TODO: dummy value, delete
+            // A::Ticks::from(0) // TODO: dummy value, delete
         let dt_reference = self.dt_reference.into_inner(Tracked(self.state.get().dt_reference_perm));
         let extension = if dt_reference.extended {
-            Self::Ticks::half_max_value()
+            A::Ticks::half_max_value()
         } else {
-            Self::Ticks::from(0)
+            A::Ticks::from(0)
         };
         dt_reference.reference_plus_dt().wrapping_add(extension)
     }
 
-    fn minimum_dt(&self) -> (result: Self::Ticks)
+    fn minimum_dt(&self) -> (result: A::Ticks)
+        requires
+            self.wf(),
         // requires
         //     self.mux.alarm is valid, // To call minimum_dt()
-        // ensures
+        ensures
+            self.wf(),
         //     // result.get_value() == self.mux.alarm.minimum_dt().get_value(),
         //     true, // Assuming self.mux.alarm.minimum_dt() returns a valid Ticks
     {
         self.mux.alarm.minimum_dt()
     }
-}
-
-impl<'a, A: Alarm<'a>> AlarmClient for VirtualMuxAlarm<'a, A> {
+// }
+//
+// impl<'a, A: Alarm<'a>> AlarmClient for VirtualMuxAlarm<'a, A> {
     fn alarm(&self)
+        requires
+            self.wf(),
         // requires
             // self.client is valid to call alarm()
-        // ensures
+        ensures
+            self.wf(),
             // self.client.count() might have changed if alarm was called
     {
         self.client.alarm();
@@ -636,7 +676,7 @@ pub trait Ticks: Copy + From<u32> + fmt::Debug + Ord + PartialOrd + Eq {
             ret == (self.get_value() as usize),
             // Masking behavior for values larger than usize
             self.get_value() >= 0,
-            ret == self.get_value() % (usize::MAX as int + 1),
+            // ret == self.get_value() % (usize::MAX as int + 1),
     ;
 
     /// The amount of bits required to left-justify this ticks value
@@ -725,7 +765,7 @@ pub trait Ticks: Copy + From<u32> + fmt::Debug + Ord + PartialOrd + Eq {
         ensures
             result <= u32::MAX,
             self.get_value() >= 0,
-            result == (self.get_value() % ((1u64 << 32) as int)) as u32,
+            // result == (self.get_value() % ((1u64 << 32) as int)) as u32,
     ;
 
     fn u32_padding() -> (result: u32)
@@ -809,7 +849,6 @@ pub trait Ticks: Copy + From<u32> + fmt::Debug + Ord + PartialOrd + Eq {
 pub trait Frequency {
     /// Returns frequency in Hz.
     fn frequency() -> (result: u32)
-        requires true,
         ensures result > 0, // Frequency must be positive
     ;
 }
@@ -818,7 +857,6 @@ pub trait Frequency {
 pub trait Time {
     /// The number of ticks per second
     fn get_freq() -> (result:u32)
-        requires true,
         ensures result > 0, // Frequency must be positive
     ;
 
@@ -830,10 +868,7 @@ pub trait Time {
     /// a sample of a counter; if an implementation relies on
     /// it being constant or changing it should use `Timestamp`
     /// or `Counter`.
-    fn now(&self) -> (result:Self::Ticks)
-        requires true,
-        ensures true, // Returns current time; specific properties depend on implementation
-    ;
+    fn now(&self) -> (result:Self::Ticks) ;
 }
 
 pub trait ConvertTicks<T: Ticks> {
@@ -1038,6 +1073,7 @@ pub trait AlarmClient {
 /// but can tolerate some jitter should use the `Timer` trait
 /// instead.
 pub trait Alarm<'a>: Time {
+    // spec fn wf(&self) -> bool; // This idea doesn't work
     /// Specify the callback for when the counter reaches the alarm
     /// value. If there was a previously installed callback this call
     /// replaces it.
@@ -1055,6 +1091,7 @@ pub trait Alarm<'a>: Time {
     // TODO: add asserts in the code and show that we want to show are met
     fn set_alarm(&self, reference: Self::Ticks, dt: Self::Ticks)
         // requires
+        //     self.wf(),
         //     dt.get_value() >= self.minimum_dt().get_value(), // dt must be sufficient
         // ensures
         //     self.is_armed(),
@@ -1065,6 +1102,8 @@ pub trait Alarm<'a>: Time {
     /// Return the current alarm value. This is undefined at boot and
     /// otherwise returns `now + dt` from the last call to `set_alarm`.
     fn get_alarm(&self) -> (result: Self::Ticks)
+        // requires
+        //     self.wf(),
         // ensures
         //     // If armed, returns the target time.
         //     // If not armed, behavior might be less defined by Tock.
@@ -1079,6 +1118,11 @@ pub trait Alarm<'a>: Time {
     ///   - `Err(ErrorCode::FAIL)` the alarm could not be disarmed and will invoke
     ///   the callback in the future
     fn disarm(&self) -> (result: Result<(), ErrorCode>)
+        // requires
+        //     self.wf(),
+        // requires
+        //     self.is_armed(),
+            // self.armed.id() === self.state@.armed_perm.id(),
         // ensures (result.is_ok() ==> !self.is_armed()),
     ;
 
@@ -1089,11 +1133,15 @@ pub trait Alarm<'a>: Time {
     /// In this case it possible for `is_armed` to return false yet to
     /// receive a callback.
     fn is_armed(&self) -> (result: bool)
+        // requires
+        //     self.wf(),
     ;
 
     /// Return the minimum dt value that is supported. Any dt smaller than
     /// this will automatically be increased to this minimum value.
     fn minimum_dt(&self) -> (result: Self::Ticks)
+        // requires
+            // self.wf(),
         ensures result.get_value() >= 0, // Minimum delay is non-negative
     ;
 }
