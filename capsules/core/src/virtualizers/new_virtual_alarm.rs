@@ -7,7 +7,6 @@ use core::fmt;
 use kernel::ErrorCode;
 use vstd::cell::*;
 use vstd::prelude::*;
-// use vstd::std_specs::option::spec_unwrap;
 
 verus! {
 #[derive(Copy, Clone)]
@@ -412,8 +411,6 @@ impl<'a, A: Alarm<'a>> View for MuxAlarm<'a, A> {
 
 impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
     pub const fn new(alarm_ref: &'a A) -> (res:MuxAlarm<'a, A>)
-        requires
-            true, // alarm_ref is a valid reference
         ensures
             res@@.enabled_perm.value() == 0,
             res@@.enabled_perm.id() == res.enabled.id(),
@@ -1073,7 +1070,6 @@ pub trait AlarmClient {
 /// but can tolerate some jitter should use the `Timer` trait
 /// instead.
 pub trait Alarm<'a>: Time {
-    // spec fn wf(&self) -> bool; // This idea doesn't work
     /// Specify the callback for when the counter reaches the alarm
     /// value. If there was a previously installed callback this call
     /// replaces it.
@@ -1091,7 +1087,6 @@ pub trait Alarm<'a>: Time {
     // TODO: add asserts in the code and show that we want to show are met
     fn set_alarm(&self, reference: Self::Ticks, dt: Self::Ticks)
         // requires
-        //     self.wf(),
         //     dt.get_value() >= self.minimum_dt().get_value(), // dt must be sufficient
         // ensures
         //     self.is_armed(),
@@ -1102,8 +1097,6 @@ pub trait Alarm<'a>: Time {
     /// Return the current alarm value. This is undefined at boot and
     /// otherwise returns `now + dt` from the last call to `set_alarm`.
     fn get_alarm(&self) -> (result: Self::Ticks)
-        // requires
-        //     self.wf(),
         // ensures
         //     // If armed, returns the target time.
         //     // If not armed, behavior might be less defined by Tock.
@@ -1118,11 +1111,6 @@ pub trait Alarm<'a>: Time {
     ///   - `Err(ErrorCode::FAIL)` the alarm could not be disarmed and will invoke
     ///   the callback in the future
     fn disarm(&self) -> (result: Result<(), ErrorCode>)
-        // requires
-        //     self.wf(),
-        // requires
-        //     self.is_armed(),
-            // self.armed.id() === self.state@.armed_perm.id(),
         // ensures (result.is_ok() ==> !self.is_armed()),
     ;
 
@@ -1133,15 +1121,11 @@ pub trait Alarm<'a>: Time {
     /// In this case it possible for `is_armed` to return false yet to
     /// receive a callback.
     fn is_armed(&self) -> (result: bool)
-        // requires
-        //     self.wf(),
     ;
 
     /// Return the minimum dt value that is supported. Any dt smaller than
     /// this will automatically be increased to this minimum value.
     fn minimum_dt(&self) -> (result: Self::Ticks)
-        // requires
-            // self.wf(),
         ensures result.get_value() >= 0, // Minimum delay is non-negative
     ;
 }
@@ -1310,8 +1294,21 @@ pub struct FakeAlarm<'a> {
 }
 
 impl<'a> FakeAlarm<'a> {
+    spec fn fake_alarm_wf(&self) -> bool
+    {
+        &&& self.now_perm@.is_init()
+        &&& self.reference_perm@.is_init()
+        &&& self.dt_perm@.is_init()
+        &&& self.armed_perm@.is_init()
+        &&& self.now_perm@.id() === self.now.id()
+        &&& self.reference_perm@.id() === self.reference.id()
+        &&& self.dt_perm@.id() === self.dt.id()
+        &&& self.armed_perm@.id() === self.armed.id()
+    }
+
     fn new(client: &ClientCounter) -> (result: Self)
         ensures
+            result.fake_alarm_wf(),
             result.now_perm@.mem_contents().value().ticks == 1_000,
             result.reference_perm@.mem_contents().value().ticks == 0,
             result.dt_perm@.mem_contents().value().ticks == 0,
@@ -1339,7 +1336,25 @@ impl<'a> FakeAlarm<'a> {
     /// The emulated delay from when hardware timer to when kernel loop will
     /// run to check if alarms have fired or not.
     pub fn hardware_delay(&self) -> (result: Ticks32)
-        ensures result.ticks == 10,
+        requires
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
+        ensures
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
+            result.ticks == 10,
     {
         Ticks32::from(10)
     }
@@ -1347,6 +1362,24 @@ impl<'a> FakeAlarm<'a> {
     /// Fast forwards time to the next time we would fire an alarm and call client. Returns if
     /// alarm is still armed after triggering client
     pub fn trigger_next_alarm(&self) -> (result: bool)
+        requires
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
+        ensures
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
         // ensures
             // If !old(self).is_armed(), result is false and state is unchanged.
             // Otherwise, self.now is updated, self.client.alarm() is called, and result is self.is_armed().
@@ -1375,6 +1408,24 @@ impl<'a> FakeAlarm<'a> {
 
     /// Runs for the specified number of ticks as long as there are alarms armed.
     pub fn run_for_ticks(&self, left: Ticks32)
+        requires
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
+        ensures
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
         // ensures
             // self.now is advanced by 'left' ticks, or until alarms stop firing and time is consumed.
             // The final value of self.now.get() == old(self).now.get().wrapping_add(left).
@@ -1406,12 +1457,30 @@ impl<'a> FakeAlarm<'a> {
         let tracked mut perm = self.now_perm.get();
         self.now.put(Tracked(&mut perm), final_now);
     }
-}
-
-impl<'a> Time for FakeAlarm<'a> {
-    type Ticks = Ticks32;
+// }
+//
+// impl<'a> Time for FakeAlarm<'a> {
+//     type Ticks = Ticks32;
 
     fn now(&self) -> (result: Ticks32)
+        requires
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
+        ensures
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
         // ensures
         //     result.ticks == (if old(self).now.get().ticks == u32::MAX { 0 } else { old(self).now.get().ticks + 1 }),
         //     self.now.get().ticks == result.ticks,
@@ -1432,15 +1501,32 @@ impl<'a> Time for FakeAlarm<'a> {
     {
         1_000
     }
-}
-
-impl<'a> Alarm<'a> for FakeAlarm<'a> {
+// }
+// 
+// impl<'a> Alarm<'a> for FakeAlarm<'a> {
     // fn set_alarm_client(&self, client: &'a dyn AlarmClient) {
     //     self.client.set(client);
     // }
 
-    fn set_alarm(&self, reference: Self::Ticks, dt: Self::Ticks)
+    fn set_alarm(&self, reference: Ticks32, dt: Ticks32)
+        requires
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
         ensures
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
             self.reference_perm@.mem_contents().value().ticks == reference.ticks,
             self.dt_perm@.mem_contents().value().ticks == dt.ticks,
             self.armed_perm@.mem_contents().value() == true,
@@ -1454,7 +1540,25 @@ impl<'a> Alarm<'a> for FakeAlarm<'a> {
         self.armed.put(Tracked(&mut perm),true);
     }
 
-    fn get_alarm(&self) -> (result: Self::Ticks)
+    fn get_alarm(&self) -> (result: Ticks32)
+        requires
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
+        ensures
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
 // error: cannot call function `lib::virtualizers::new_virtual_alarm::Ticks::wrapping_add` with mode exec
 //     --> capsules/core/src/virtualizers/new_virtual_alarm.rs:1570:33
 //      |
@@ -1467,7 +1571,24 @@ impl<'a> Alarm<'a> for FakeAlarm<'a> {
     }
 
     fn disarm(&self) -> (result: Result<(), ErrorCode>)
+        requires
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
         ensures
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
             self.armed_perm@.mem_contents().value() == false,
             result == Ok::<(), ErrorCode>(()),
     {
@@ -1477,13 +1598,49 @@ impl<'a> Alarm<'a> for FakeAlarm<'a> {
     }
 
     fn is_armed(&self) -> (result:bool)
-        ensures result == self.armed_perm@.mem_contents().value(),
+        requires
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
+        ensures
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
+            result == self.armed_perm@.mem_contents().value(),
     {
         self.armed.into_inner((self.armed_perm))
     }
 
-    fn minimum_dt(&self) -> (result: Self::Ticks)
-        ensures result.ticks == 0,
+    fn minimum_dt(&self) -> (result: Ticks32)
+        requires
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
+        ensures
+            self.now_perm@.is_init(),
+            self.reference_perm@.is_init(),
+            self.dt_perm@.is_init(),
+            self.armed_perm@.is_init(),
+            self.now_perm@.id() === self.now.id(),
+            self.reference_perm@.id() === self.reference.id(),
+            self.dt_perm@.id() === self.dt.id(),
+            self.armed_perm@.id() === self.armed.id(),
+            result.ticks == 0,
     {
         0u32.into()
     }
