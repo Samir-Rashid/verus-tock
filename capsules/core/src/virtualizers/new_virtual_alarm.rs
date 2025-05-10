@@ -1,28 +1,10 @@
 // Licensed under the Apache License, Version 2.0 or the MIT License.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
-//! Hardware agnostic interfaces for time and timers within the Tock
-//! kernel.
-//!
-//! These traits are designed to be able encompass the wide
-//! variety of hardware counters in a general yet efficient way. They
-//! abstract the frequency of a counter through the `Frequency` trait
-//! and the width of a time value through the `Ticks`
-//! trait. Higher-level software abstractions should generally rely on
-//! standard and common implementations of these traits (e.g.. `u32`
-//! ticks and 16MHz frequency).  Hardware counter implementations and
-//! peripherals can represent the actual hardware units an translate
-//! into these more general ones.
-// use crate::ErrorCode;
+use super::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
 use core::cmp::Ordering;
 use core::fmt;
 use kernel::ErrorCode;
-// spec_saturating_sub
-// use kernel::collections::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
-use super::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
-// use kernel::hil::time::{ex_saturatingsub, ExErrorCode, ExOrdering};
-// use kernel::hil::time::{Ticks, Time};
-// use kernel::utilities::cells::OptionalCell;
 use vstd::cell::*;
 use vstd::prelude::*;
 
@@ -81,16 +63,7 @@ impl<'a, A: Alarm<'a>> ListNodeV<'a, VirtualMuxAlarm<'a, A>> for VirtualMuxAlarm
             // result == self.next.as_ref().unwrap(),
             result.0.id() == perm@.id(), // The returned ListLinkV contains the PCell that perm is for
     {
-        // &self.next(Tracked(&self.state.get().next).borrow()))
-        // let points_to = perm.borrow().points_to_map;
         &self.next((perm))
-        // match self.next {
-        //     Some(next) => &(next.unwrap().unwrap()),
-        //     None => unreachable!(),
-        // }
-
-
-        // self.next.as_ref().unwrap()
     }
 }
 
@@ -174,6 +147,7 @@ impl<'a, A: Alarm<'a>> Time for VirtualMuxAlarm<'a, A> {
 }
 
 impl<'a, A: Alarm<'a>> Alarm<'a> for VirtualMuxAlarm<'a, A> {
+    // NOTE: this feature has been removed to simplify verification
     // fn set_alarm_client(&self, client: &'a dyn time::AlarmClient) {
     //     self.client.set(client);
     // }
@@ -544,7 +518,7 @@ impl<'a, A: Alarm<'a>> AlarmClient for MuxAlarm<'a, A> {
         }
         let tracked mut perm = self.state.get().firing_perm;
         self.firing.put(Tracked(&mut perm), false);
-        
+
         // Find the soonest alarm client (if any) and set the "next" underlying
         // alarm based on it.  This needs to happen after firing all expired
         // alarms since those may have reset new alarms.
@@ -1274,143 +1248,6 @@ impl PartialEq for Ticks32 {
 
 impl Eq for Ticks32 {}
 
-/*
-#[derive(Clone, Copy, Debug)]
-pub struct Ticks24(u32);
-
-impl Ticks24 {
-    pub fn get_mask() -> (result: u32)
-        ensures result == 0x00FFFFFF,
-    {
-        0x00FFFFFF
-    }
-}
-
-impl From<u32> for Ticks24 {
-    fn from(val: u32) -> (result: Ticks24)
-        ensures result.0 == (val & Self::get_mask()),
-    {
-        Ticks24(val & Self::get_mask())
-    }
-}
-
-impl Ticks for Ticks24 {
-    closed spec fn get_value(&self) -> (result: int) {
-        (self.0 & Self::get_mask()) as int
-    }
-
-    closed spec fn spec_width() -> (result: u32) {
-        24
-    }
-
-    fn width() -> (result: u32)
-        ensures result == 24,
-    {
-        24
-    }
-
-    fn into_usize(self) -> (result: usize)
-        ensures result == (self.0 & Self::get_mask()) as usize,
-    {
-        assert(self.0 == self.get_value()); // Original assertion
-        (self.0 & Self::get_mask()) as usize
-    }
-
-    fn into_u32(self) -> (result: u32)
-        ensures result == (self.0 & Self::get_mask()),
-    {
-        self.0 & Self::get_mask()
-    }
-
-    fn wrapping_add(self, other: Self) -> (result: Self)
-        ensures result.0 == ((self.0 & Self::get_mask()).wrapping_add(other.0 & Self::get_mask()) & Self::get_mask()),
-    {
-        Ticks24(self.0.wrapping_add(other.0) & Self::get_mask())
-    }
-
-    fn wrapping_sub(self, other: Self) -> (result: Self)
-        ensures result.0 == ((self.0 & Self::get_mask()).wrapping_sub(other.0 & Self::get_mask()) & Self::get_mask()),
-    {
-        Ticks24(self.0.wrapping_sub(other.0) & Self::get_mask())
-    }
-
-    fn within_range(self, start: Self, end: Self) -> (result: bool)
-        ensures result == (self.wrapping_sub(start).0 < end.wrapping_sub(start).0), // .0 already masked by wrapping_sub
-    {
-        self.wrapping_sub(start).0 < end.wrapping_sub(start).0
-    }
-
-    fn max_value() -> (result: Self)
-        ensures result.0 == Self::get_mask(),
-    {
-        Ticks24(Self::get_mask())
-    }
-
-    fn half_max_value() -> (result: Self)
-        ensures result.0 == (1 + (Self::get_mask() / 2)),
-    {
-        Self(1 + (Self::max_value().0 / 2))
-    }
-
-    #[inline]
-    fn from_or_max(val: u64) -> (result: Self)
-        ensures
-            (val < Self::get_mask() as u64) ==> result.0 == (val as u32 & Self::get_mask()),
-            (val >= Self::get_mask() as u64) ==> result.0 == Self::get_mask(),
-    {
-        if val < Self::max_value().0 as u64 {
-            Self::from(val as u32)
-        } else {
-            Self::max_value()
-        }
-    }
-
-    #[inline]
-    #[verifier(external_body)]
-    fn saturating_scale(self, numerator: u32, denominator: u32) -> (result: u32)
-        requires denominator != 0,
-        ensures
-            ({let scaled_val = ((self.0 & Self::get_mask()) as u64 * numerator as u64) / denominator as int;
-            if scaled_val < u32::MAX as u64 { result == scaled_val as u32 }
-            else { result == u32::MAX }}),
-    {
-        let scaled = (self.0 & Self::get_mask()) as u64 * numerator as u64 / denominator as u64;
-        if scaled < u32::MAX as u64 {
-            scaled as u32
-        } else {
-            u32::MAX
-        }
-    }
-}
-
-impl PartialOrd for Ticks24 {
-    fn partial_cmp(&self, other: &Self) -> (result: Option<Ordering>)
-        ensures result == Some((self.0 & Ticks24::get_mask()).cmp(&(other.0 & Ticks24::get_mask()))),
-    {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Ticks24 {
-    #[verifier(external_body)]
-    fn cmp(&self, other: &Self) -> (result: Ordering)
-        ensures result == (self.0 & Ticks24::get_mask()).cmp(&(other.0 & Ticks24::get_mask())),
-    {
-        (self.0 & Ticks24::get_mask()).cmp(&(other.0 & Ticks24::get_mask()))
-    }
-}
-
-impl PartialEq for Ticks24 {
-    fn eq(&self, other: &Self) -> (result: bool)
-        ensures result == ((self.0 & Ticks24::get_mask()) == (other.0 & Ticks24::get_mask())),
-    {
-        (self.0 & Ticks24::get_mask()) == (other.0 & Ticks24::get_mask())
-    }
-}
-
-impl Eq for Ticks24 {}
-*/
-
 pub struct FakeAlarm<'a> {
     pub now: PCell<Ticks32>,
     pub reference: PCell<Ticks32>,
@@ -1431,13 +1268,11 @@ impl<'a> FakeAlarm<'a> {
             result.reference_perm@.mem_contents().value().ticks == 0,
             result.dt_perm@.mem_contents().value().ticks == 0,
             result.armed_perm@.mem_contents().value() == false,
-            // result.client is a new ClientCounter, its state is covered by ClientCounter::new ensures
     {
         let (now, Tracked(now_perm)) = PCell::new(1_000u32.into());
         let (reference, Tracked(reference_perm)) = PCell::new(0u32.into());
         let (dt, Tracked(dt_perm)) = PCell::new(0u32.into());
         let (armed, Tracked(armed_perm)) = PCell::new(false);
-        // let client = ClientCounter::new();
 
         Self {
             now: now,
@@ -1614,7 +1449,8 @@ pub struct ClientCounterState {
 impl ClientCounter {
     fn new() -> (result: Self)
         ensures
-            result.1.count@.mem_contents().value() == 0, // Assuming ClientCounterState is part of the spec
+            result.1.count@.mem_contents().value() == 0,
+            result.0.id() === result.1.count@.id(),
     {
         let (cell, Tracked(count_perm)) = PCell::new(0);
         Self(cell, ClientCounterState { count: Tracked(count_perm) })
@@ -1622,6 +1458,7 @@ impl ClientCounter {
 
     fn count(&self) -> (result: usize)
         ensures result == self.1.count@.mem_contents().value(),
+            self.0.id() === self.1.count@.id(),
     {
         self.0.into_inner(self.1.count)
     }
@@ -1661,7 +1498,8 @@ fn run_until_disarmed(alarm: &FakeAlarm)
 
 fn main()
 {
-    {
+    // write dummy positive tests
+    { // One alarm will fire
         let client= ClientCounter::new(); // TODO: alarm needs to use this client
         let alarm = FakeAlarm::new(&client);
 
@@ -1732,6 +1570,18 @@ fn main()
         }
         */
     }
+    { // TODO: five alarms will fire
+
+    }
+    { // TODO: disarming an alarm will not fire
+
+    }
+    // TODO: write dummy negative tests
+    { // TODO: come up with cases that should statically be caught by verifier
+
+    }
+
+    // TODO: 3 test cases which correspond to the three overlapping cases. past/future/present
 }
 } // verus!
 
