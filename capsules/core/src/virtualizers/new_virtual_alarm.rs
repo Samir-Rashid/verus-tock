@@ -2,14 +2,52 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 use super::list_i::{GhostState, ListIteratorV, ListLinkV, ListNodeV, ListV};
+// use super::errorcode::ErrorCode;
 use core::cmp::Ordering;
 use core::fmt;
-use kernel::ErrorCode;
+// use kernel::ErrorCode;
 use vstd::cell::*;
 use vstd::invariant;
 use vstd::prelude::*;
 
 verus! {
+#[verifier(external_type_specification)]
+pub struct ExOrdering(core::cmp::Ordering);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(usize)]
+pub enum ErrorCode {
+    // Reserved value, for when "no error" / "success" should be
+    // encoded in the same numeric representation as ErrorCode
+    //
+    // Ok(()) = 0,
+    /// Generic failure condition
+    FAIL = 1,
+    /// Underlying system is busy; retry
+    BUSY = 2,
+    /// The state requested is already set
+    ALREADY = 3,
+    /// The component is powered down
+    OFF = 4,
+    /// Reservation required before use
+    RESERVE = 5,
+    /// An invalid parameter was passed
+    INVAL = 6,
+    /// Parameter passed was too large
+    SIZE = 7,
+    /// Operation canceled by a call
+    CANCEL = 8,
+    /// Memory required not available
+    NOMEM = 9,
+    /// Operation is not supported
+    NOSUPPORT = 10,
+    /// Device is not available
+    NODEVICE = 11,
+    /// Device is not physically installed
+    UNINSTALLED = 12,
+    /// Packet transmission not acknowledged
+    NOACK = 13,
+}
 #[derive(Copy, Clone)]
 pub struct TickDtReference<T: Ticks> {
     /// Reference time point when this alarm was setup.
@@ -647,21 +685,21 @@ impl<'a> MuxAlarm<'a> {
     }
 }
 
-// pub(crate) open spec fn spec_saturating_sub(lhs: int, rhs: int) -> int {
-//     if lhs >= rhs {
-//         lhs - rhs
-//     } else {
-//         0
-//     }
-// }
+pub open spec fn spec_saturating_sub(lhs: int, rhs: int) -> int {
+    if lhs >= rhs {
+        lhs - rhs
+    } else {
+        0
+    }
+}
 
-// #[verifier(external_fn_specification)]
-// pub fn ex_saturatingsub(a: u32, b: u32) -> (ret: u32)
-//     ensures
-//         ret == spec_saturating_sub(a as int, b as int),
-// {
-//     a.saturating_sub(b)
-// }
+#[verifier(external_fn_specification)]
+pub fn ex_saturatingsub(a: u32, b: u32) -> (ret: u32)
+    ensures
+        ret == spec_saturating_sub(a as int, b as int),
+{
+    a.saturating_sub(b)
+}
 
 /// An integer type defining the width of a time value, which allows
 /// clients to know when wraparound will occur.

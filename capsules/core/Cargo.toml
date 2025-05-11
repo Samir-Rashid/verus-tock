@@ -14,9 +14,9 @@ enum_primitive = { path = "../../libraries/enum_primitive" }
 tickv = { path = "../../libraries/tickv" }
 # vstd = { path = "../../verus/source/vstd" }
 # [dependencies]
-# vstd = { git = "https://github.com/verus-lang/verus", rev = "baba168f92bda643455992d53efe3668af19c0e4" }
-# builtin = { git = "https://github.com/verus-lang/verus", rev = "baba168f92bda643455992d53efe3668af19c0e4" }
-# builtin_macros = { git = "https://github.com/verus-lang/verus", rev = "baba168f92bda643455992d53efe3668af19c0e4" }
+vstd = { git = "https://github.com/verus-lang/verus", rev = "baba168f92bda643455992d53efe3668af19c0e4" }
+builtin = { git = "https://github.com/verus-lang/verus", rev = "baba168f92bda643455992d53efe3668af19c0e4" }
+builtin_macros = { git = "https://github.com/verus-lang/verus", rev = "baba168f92bda643455992d53efe3668af19c0e4" }
 
 [package.metadata.verus]
 verify = true

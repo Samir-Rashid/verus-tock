@@ -11,7 +11,7 @@ pub mod test;
 pub mod stream;
 
 pub mod adc;
-pub mod alarm;
+//pub mod alarm;
 pub mod button;
 pub mod console;
 pub mod console_ordered;

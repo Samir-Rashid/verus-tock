@@ -4,14 +4,10 @@
 
 //! Standard errors in Tock.
 
-use builtin_macros::verus;
-
 /// Standard errors in Tock.
 ///
 /// Each error code is assigned a fixed [`usize`] nonzero number. In effect, 0
 /// is reserved for "no error" / "success".
-verus! {
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(usize)]
 pub enum ErrorCode {
@@ -126,6 +122,4 @@ pub fn into_statuscode(r: Result<(), ErrorCode>) -> usize {
         Ok(()) => 0,
         Err(e) => e as usize,
     }
-}
-
 }
