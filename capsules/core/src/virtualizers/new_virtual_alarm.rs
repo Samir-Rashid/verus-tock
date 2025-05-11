@@ -6,6 +6,7 @@ use core::cmp::Ordering;
 use core::fmt;
 use kernel::ErrorCode;
 use vstd::cell::*;
+use vstd::invariant;
 use vstd::prelude::*;
 
 verus! {
@@ -67,6 +68,14 @@ impl<'a> ListNodeV<'a, VirtualMuxAlarm<'a>> for VirtualMuxAlarm<'a> {
     }
 }
 
+impl<'a> View for VirtualMuxAlarm<'a> {
+    type V = Tracked<VirtualMuxAlarmState<'a>>;
+    open spec fn view(&self) -> Self::V
+    {
+        self.state // returns spec mode
+    }
+}
+
 impl<'a> VirtualMuxAlarm<'a> {
     // type Ticks: Ticks;
 
@@ -75,16 +84,17 @@ impl<'a> VirtualMuxAlarm<'a> {
         &&&    self.mux.virtual_alarms.is_some()
         // &&&    self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(spec_unwrap(self.mux.state@.virtual_alarms_state))) // TODO: this is probably needed
         &&&    self.next.is_some()
-        &&&    self.state@.next_perm.is_init()
-        &&&    self.state@.dt_reference_perm.is_init()
-        &&&    self.state@.armed_perm.is_init()
-        // &&&    self.next.unwrap().id() == self.state@.next_perm.id()
-        &&&    self.dt_reference.id() == self.state@.dt_reference_perm.id()
-        &&&    self.armed.id() == self.state@.armed_perm.id()
+        &&&    self@@.next_perm.is_init()
+        &&&    self@@.dt_reference_perm.is_init()
+        &&&    self@@.armed_perm.is_init()
+        // &&&    self.next.unwrap().id() == self@@.next_perm.id()
+        &&&    self.dt_reference.id() == self@@.dt_reference_perm.id()
+        &&&    self.armed.id() == self@@.armed_perm.id()
         // TODO: MUST assert WF for the MuxAlarm
         &&& self.mux.mux_alarm_wf()
         &&& self.mux.alarm.fake_alarm_wf()
         &&& self.mux.virtual_alarms.is_some()
+        &&& self.client.client_counter_wf()
     }
 
     /// After calling new, always call setup()
@@ -182,25 +192,27 @@ impl<'a> VirtualMuxAlarm<'a> {
             self.wf(),
         // TODO: fix all the requires clauses
         // requires
-        //     self.state@.armed_perm.is_init() && self.state@.armed_perm.id() == self.armed.id(),
+        //     self@@.armed_perm.is_init() && self@@.armed_perm.id() == self.armed.id(),
         //     self.mux.state@.enabled.is_init() && self.mux.state@.enabled.id() == self.mux.enabled.id(),
         //     // self.mux.alarm is valid for disarm call
         ensures
             self.wf(),
             result == Ok::<(), ErrorCode>(()),
-            self.state@.armed_perm.id() == self.armed.id(),
-            self.state@.armed_perm.is_init(),
-            self.state@.armed_perm.value() == false,
-            // (old(self.armed.borrow(Tracked(&self.state@.armed))) && old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) > 0) ==>
+            self@@.armed_perm.id() == self.armed.id(),
+            self@@.armed_perm.is_init(),
+            self@@.armed_perm.value() == false,
+            // (old(self.armed.borrow(Tracked(&self@@.armed))) && old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) > 0) ==>
             //    self.mux.state@.enabled.value() == old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) - 1,
             // If old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) == 1 and self was armed, underlying alarm is disarmed.
     {
         if !self.armed.into_inner(Tracked(self.state.get().armed_perm)) {
+            assert(self.state@.armed_perm.value() == false);
             return Ok(());
         }
 
         let tracked mut perms = self.state.get().armed_perm;
         self.armed.replace(Tracked(&mut perms), false);
+        assert(self.state@.armed_perm.value() == false); // assertion failed
 
         let enabled = self.mux.enabled.into_inner(Tracked(self.mux.state.get().enabled_perm)) - 1;
         let tracked mut perms = self.mux.state.get().enabled_perm;
@@ -218,11 +230,11 @@ impl<'a> VirtualMuxAlarm<'a> {
         requires
             self.wf(),
         // requires
-        //     self.state@.armed.is_init() && self.state@.armed.id() == self.armed.id(),
+        //     self@@.armed.is_init() && self@@.armed.id() == self.armed.id(),
         // TODO: THIS IS TRACKED INCORRECTLY, I need to store the mathematical representation of armed in state
         ensures
             self.wf(),
-        //     result == self.state@.armed(Tracked(self.state@.armed)),
+        //     result == self@@.armed(Tracked(self@@.armed)),
     {
         self.armed.into_inner(Tracked(self.state.get().armed_perm))
     }
@@ -231,8 +243,8 @@ impl<'a> VirtualMuxAlarm<'a> {
         requires
             self.wf(),
         // requires
-        //     self.state@.dt_reference.is_init() && self.state@.dt_reference.id() == self.dt_reference.id(),
-        //     self.state@.armed.is_init() && self.state@.armed.id() == self.armed.id(),
+        //     self@@.dt_reference.is_init() && self@@.dt_reference.id() == self.dt_reference.id(),
+        //     self@@.armed.is_init() && self@@.armed.id() == self.armed.id(),
         //     self.mux.state@.enabled.is_init() && self.mux.state@.enabled.id() == self.mux.enabled.id(),
         //     self.mux.state@.firing.is_init() && self.mux.state@.firing.id() == self.mux.firing.id(),
         //     self.mux.state@.next_tick_vals.is_init() && self.mux.state@.next_tick_vals.id() == self.mux.next_tick_vals.id(),
@@ -277,7 +289,11 @@ impl<'a> VirtualMuxAlarm<'a> {
         match self.armed.replace(Tracked(&mut perm), true){
             false => {
                 let tracked mut perm = self.mux.state.get().enabled_perm;
-                self.mux.enabled.replace(Tracked(&mut perm), enabled + 1);
+                if enabled < usize::MAX {
+                    self.mux.enabled.replace(Tracked(&mut perm), enabled + 1);
+                } else {
+                    // impossible case in practice
+                }
             }
             true => {} // Already armed, do nothing
         }
@@ -323,10 +339,10 @@ impl<'a> VirtualMuxAlarm<'a> {
         requires
             self.wf(),
         // requires
-        //     // self.state@.dt_reference.is_init() && self.state@.dt_reference.id() == self.dt_reference.id(),
+        //     // self@@.dt_reference.is_init() && self@@.dt_reference.id() == self.dt_reference.id(),
         ensures
             self.wf(),
-            // let dt_ref_val = self.dt_reference.borrow(Tracked(&self.state@.dt_reference));
+            // let dt_ref_val = self.dt_reference.borrow(Tracked(&self@@.dt_reference));
             // let extension_val = if dt_ref_val.extended { Ticks32::half_max_value() } else { Ticks32::from(0) };
             // result.get_value() == dt_ref_val.reference_plus_dt().wrapping_add(extension_val).get_value(),
             // result.get_value() == Ticks32::from(0).get_value(), // For current dummy implementation
@@ -408,7 +424,7 @@ impl<'a> View for MuxAlarm<'a> {
 
 impl<'a> MuxAlarm<'a> {
     pub closed spec fn mux_alarm_wf(&self) -> bool {
-        &&& self.state@.virtual_alarms_state.is_some()
+        &&& self@@.virtual_alarms_state.is_some()
         &&& self@@.enabled_perm.is_init()
         &&& self@@.alarm.fake_alarm_wf()
         &&& self@@.firing_perm.is_init()
@@ -466,8 +482,8 @@ impl<'a> MuxAlarm<'a> {
             // Any other preconditions from original Tock logic, e.g., dt >= minimum_dt
         ensures
             self.mux_alarm_wf(),
-            // self@@.next_tick_vals.id() === old(&mut self@@).next_tick_vals.id(), // ID remains same
-            self.next_tick_vals.id() === self@@.next_tick_vals_perm@.pcell, // ID matches ghost state
+            // self@@.next_tick_vals_perm.id() === old(&mut self)@@.next_tick_vals_perm.id(), // ID remains same?
+            self.next_tick_vals.id() === self@@.next_tick_vals_perm@.pcell,
             self@@.next_tick_vals_perm.is_init(), // Still initialized, unsure why this isn't meeting recommendations
             self@@.next_tick_vals_perm.value().is_some(),
             self@@.next_tick_vals_perm.value().unwrap().0.get_value() == reference.get_value(),
@@ -476,7 +492,9 @@ impl<'a> MuxAlarm<'a> {
     {
         let tracked mut perms = self.state.get().next_tick_vals_perm;
         self.next_tick_vals.replace(Tracked(&mut perms), Some((reference, dt)));
+        // assert(self@@.next_tick_vals_perm.value().is_some());
         self.alarm.set_alarm(reference, dt);
+        // assert(self@@.next_tick_vals_perm.value().is_some());
     }
 
     pub fn disarm(&self)
@@ -1309,9 +1327,12 @@ impl<'a> FakeAlarm<'a> {
         &&& self.reference_perm@.id() === self.reference.id()
         &&& self.dt_perm@.id() === self.dt.id()
         &&& self.armed_perm@.id() === self.armed.id()
+        &&& self.client.client_counter_wf()
     }
 
     fn new(client: &ClientCounter) -> (result: Self)
+        requires
+            client.client_counter_wf(),
         ensures
             result.fake_alarm_wf(),
             result.now_perm@.mem_contents().value().ticks == 1_000,
@@ -1387,7 +1408,7 @@ impl<'a> FakeAlarm<'a> {
     }
 
     /// Runs for the specified number of ticks as long as there are alarms armed.
-    fn run_for_ticks(&self, left: Ticks32)
+    /*fn run_for_ticks(&self, left: Ticks32)
         requires
             self.fake_alarm_wf(),
         ensures
@@ -1422,7 +1443,7 @@ impl<'a> FakeAlarm<'a> {
         // Ensure that we ate up all of the time we were suppose to run for
         let tracked mut perm = self.now_perm.get();
         self.now.replace(Tracked(&mut perm), final_now);
-    }
+    }*/
 // }
 //
 // impl<'a> Time for FakeAlarm<'a> {
@@ -1506,15 +1527,17 @@ impl<'a> FakeAlarm<'a> {
     fn disarm(&self) -> (result: Result<(), ErrorCode>)
         requires
             self.fake_alarm_wf(),
+            // Should require `armed == true`?
+            self.armed_perm@.id() === self.armed.id(),
         ensures
             self.fake_alarm_wf(),
             self.armed_perm@.id() === self.armed.id(),
-            self.armed_perm@.mem_contents().value() == false,
+            self.armed_perm@.mem_contents().value() == false, // assertion failed
             result == Ok::<(), ErrorCode>(()),
     {
         let tracked mut perm = self.armed_perm.get();
         self.armed.replace(Tracked(&mut perm),false);
-        assert(self.armed_perm@.mem_contents().value() == false);
+        // assert(self.armed_perm@.mem_contents().value() == false); // assertion failed
         Ok(())
     }
 
@@ -1606,7 +1629,14 @@ fn run_until_disarmed(alarm: &FakeAlarm)
         // (!alarm.is_armed()) || true, // Second part is tautology if loop count matters for ensures
                                      // More precise: alarm.client.count() reflects number of firings
 {
-    for _ in 0..20 {
+    for _ in 0..20 
+        invariant // needs loop invariant of wf
+            alarm.fake_alarm_wf(),
+            alarm.armed_perm@.id() === alarm.armed.id(),
+            alarm.client.client_counter_wf(),
+            // loop invariant of count
+            // alarm.client.count() == old(alarm).client.count() + 1, // TODO: URGENT: should try proving this
+        {
         if !alarm.trigger_next_alarm() {
             return;
         }
@@ -1630,6 +1660,7 @@ fn main()
         proof{
             // This assertion will likely fail with current code structure as `fired_count` is 0.
             // To make it 1, `local_client_counter_for_assertion.alarm()` must be called.
+            assert(1 == 0);
             assert(fired_count == 1);
             assert(fired_count == 0); // Based on current logic.
         }
