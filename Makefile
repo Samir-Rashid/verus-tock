@@ -24,9 +24,12 @@ SHELL := bash
 ## User interface / usage
 ##
 default-target:
-	@echo "let's verify everything"
+	@echo -e "\033[1;31m let's verify everything. If this is your first time, run 'make first_time' to build initial tock deps \033[00m"
 	# make -f Verifile verify_kernel
 	make -f Verifile verify_virtual_alarm
+
+first_time:
+	make -f Verifile all
 
 # By default, let's print out some help
 .PHONY: usage
