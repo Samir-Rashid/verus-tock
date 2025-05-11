@@ -37,6 +37,8 @@ Temporary Items
 
 ## Log Files
 *.log
+lib.long-type*
+llm.txt
 
 ## Vim tags files
 tags

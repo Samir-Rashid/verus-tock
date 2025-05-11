@@ -145,7 +145,7 @@ impl<'a> VirtualMuxAlarm<'a> {
             // self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(self.mux.state@.virtual_alarms.unwrap())),
             // old(self.mux.state@.virtual_alarms.unwrap()@.cells.len()) + 1 == self.mux.state@.virtual_alarms.unwrap()@.cells.len(),
     {
-        let tracked mut arg0 = self.mux.state.get().virtual_alarms_state.get().tracked_unwrap();
+        let tracked mut arg0 = self.mux.state.get().virtual_alarms_state.tracked_unwrap().get();
         let mut arg1 = Tracked(arg0);
         self.mux.virtual_alarms.unwrap().push_head(self, Tracked(self.state.get().next_perm), &mut (arg1));
     }
@@ -389,7 +389,7 @@ pub struct MuxAlarm<'a> {
 // #[verifier::reject_recursive_types(A)]
 pub struct MuxAlarmState<'a> {
     pub virtual_alarm_states_seq: Ghost<Seq<VirtualMuxAlarmState<'a>>>,
-    pub virtual_alarms_state: Tracked<Option<GhostState<'a, VirtualMuxAlarm<'a>>>>,
+    pub virtual_alarms_state: Option<Tracked<GhostState<'a, VirtualMuxAlarm<'a>>>>,
     pub enabled_perm: PointsTo<usize>,
     pub alarm: &'a FakeAlarm<'a>,
     pub firing_perm: PointsTo<bool>,
@@ -408,8 +408,7 @@ impl<'a> View for MuxAlarm<'a> {
 
 impl<'a> MuxAlarm<'a> {
     pub closed spec fn mux_alarm_wf(&self) -> bool {
-        &&& self.state@.virtual_alarms_state.get().is_some()
-        // &&& self.state@.virtual_alarm_states_seq.is_init()
+        &&& self.state@.virtual_alarms_state.is_some()
         &&& self@@.enabled_perm.is_init()
         &&& self@@.alarm.fake_alarm_wf()
         &&& self@@.firing_perm.is_init()
@@ -421,11 +420,9 @@ impl<'a> MuxAlarm<'a> {
         &&& self.next_tick_vals.id() === self@@.next_tick_vals_perm.id()
         &&& self@@.next_tick_vals_perm.is_init()
         &&& self.virtual_alarms.is_some()
-        &&& self@@.virtual_alarms_state.get().is_some()
         &&& self@@.fire_time.is_none() ==> self@@.firing_perm.value() == false
-        // &&& self.virtual_alarms.as_ref().unwrap().well_formed_list(&self@@.virtual_alarms.unwrap()) // TODO: ?
         &&& self.alarm.fake_alarm_wf()
-        &&& self.virtual_alarms.unwrap().well_formed_list(&(self@@.virtual_alarms_state.unwrap())) // cant use trackec in proof
+        &&& self.virtual_alarms.unwrap().well_formed_list(&(self@@.virtual_alarms_state.get_Some_0()))
     }
 
     pub const fn new(alarm_ref: &'a FakeAlarm) -> (res:MuxAlarm<'a>)
@@ -435,7 +432,6 @@ impl<'a> MuxAlarm<'a> {
             res@@.firing_perm.value() == false,
             res@@.next_tick_vals_perm.value().is_none(), // Option<(Ticks32, Ticks32)>
             res.next_tick_vals.id() === res@@.next_tick_vals_perm@.pcell,
-            // res.virtual_alarms.as_ref().unwrap().well_formed_list(&res@@.virtual_alarms.unwrap()), // Assuming ListV::new ensures this
             res@@.virtual_alarm_states_seq@.len() == 0,
             res@@.alarm == alarm_ref,
             res@@.fire_time.is_none(),
@@ -454,7 +450,7 @@ impl<'a> MuxAlarm<'a> {
             next_tick_vals: next_tick_vals,
             state: Tracked(MuxAlarmState {
                 virtual_alarm_states_seq: seq,
-                virtual_alarms_state: Tracked(Some(virtual_alarms_perm)),
+                virtual_alarms_state: Some(Tracked((virtual_alarms_perm))),
                 enabled_perm,
                 alarm: alarm_ref,
                 firing_perm,
@@ -480,14 +476,12 @@ impl<'a> MuxAlarm<'a> {
     {
         let tracked mut perms = self.state.get().next_tick_vals_perm;
         self.next_tick_vals.replace(Tracked(&mut perms), Some((reference, dt)));
-        // TODO: self.alarm.set_alarm(...) call and its state modeling
         self.alarm.set_alarm(reference, dt);
     }
 
     pub fn disarm(&self)
         requires
             self.mux_alarm_wf(),
-            // self.alarm is valid for disarm call,
         ensures
             self.mux_alarm_wf(),
             // self.next_tick_vals.id() === old(self).next_tick_vals.id(),
@@ -528,12 +522,12 @@ impl<'a> MuxAlarm<'a> {
         self.firing.replace(Tracked(&mut perm), true);
         let mut iterator = ListIteratorV::new(
             &(self.virtual_alarms).unwrap(),
-        &Tracked(self.state.get().virtual_alarms_state.get().tracked_unwrap()));
+        &Tracked(self.state.get().virtual_alarms_state.tracked_unwrap().get()));
 
         // for cur in self.virtual_alarms.iter() {
         // while let Some(cur) = current {
         loop {
-            match iterator.next(&Tracked(self.state.get().virtual_alarms_state.get().tracked_unwrap())) {
+            match iterator.next(&Tracked(self.state.get().virtual_alarms_state.tracked_unwrap().get())) {
                 Some(cur) => {
                     let dt_ref = cur.dt_reference.into_inner(Tracked(cur.state.get().dt_reference_perm));
                     let now = self.alarm.now();
@@ -591,12 +585,12 @@ impl<'a> MuxAlarm<'a> {
         //     })
         let mut iterator = ListIteratorV::new(
             &(self.virtual_alarms).unwrap(),
-        &Tracked(self.state.get().virtual_alarms_state.get().tracked_unwrap()));
+        &Tracked(self.state.get().virtual_alarms_state.tracked_unwrap().get()));
         let mut min_ticks = None;
         let mut min_alarm = None;
 
         loop {
-            match iterator.next(&Tracked(self.state.get().virtual_alarms_state.get().tracked_unwrap())) {
+            match iterator.next(&Tracked(self.state.get().virtual_alarms_state.tracked_unwrap().get())) {
                 Some(cur) => {
                     if cur.armed.into_inner(Tracked(cur.state.get().armed_perm)) {
                         let when = cur.dt_reference.into_inner(Tracked(cur.state.get().dt_reference_perm));
