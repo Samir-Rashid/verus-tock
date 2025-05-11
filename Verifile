@@ -44,16 +44,16 @@ compile_enum_primitive:
 
 # Verification targets
 
-verify_all: verify_kernel verify_virtual_alarm verify_rtc_nrf5x
+verify_all: compile_all verify_kernel verify_virtual_alarm verify_rtc_nrf5x
 
-verify_kernel:
+verify_kernel: compile_all
 	verus kernel/src/lib.rs -L dependency=$(DEPS_DIR)/deps \
 		--extern=tock_registers=$(TOCK_REGISTERS) \
 		--extern=tock_cells=$(TOCK_CELLS) \
 		--extern=tock_tbf=$(TOCK_TBF) \
 		--crate-type=lib --export=$(KERNEL_VIR) --multiple-errors 5
 
-profile_kernel:
+profile_kernel: compile_all
 	verus kernel/src/lib.rs -L dependency=$(DEPS_DIR)/deps \
 		--extern=tock_registers=$(TOCK_REGISTERS) \
 		--extern=tock_cells=$(TOCK_CELLS) \
@@ -61,13 +61,13 @@ profile_kernel:
 		--crate-type=lib --export=$(KERNEL_VIR) --multiple-errors 5 --verify-module "collections::list_i"  --profile-all --rlimit 1
 # --verify-function ListV::head
 
-verify_virtual_alarm:
+verify_virtual_alarm: compile_all
 	verus capsules/core/src/lib.rs -L dependency=$(DEPS_DIR)/deps \
 		--extern=kernel=$(KERNEL) \
 		--extern=enum_primitive=$(ENUM_PRIMITIVE) \
 		--crate-type=lib --import kernel=$(KERNEL_VIR) --no-lifetime
 
-verify_rtc_nrf5x:
+verify_rtc_nrf5x: compile_all
 	verus chips/nrf5x/src/rtc.rs -L dependency=$(DEPS_DIR)/deps \
 		--extern=kernel=$(KERNEL) \
 		--extern=enum_primitive=$(ENUM_PRIMITIVE) \
