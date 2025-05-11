@@ -12,9 +12,12 @@ edition.workspace = true
 tock-registers = { path = "../libraries/tock-register-interface" }
 tock-cells = { path = "../libraries/tock-cells" }
 tock-tbf = { path = "../libraries/tock-tbf" }
-builtin = { path = "../verus/source/builtin" }
-builtin_macros = { path = "../verus/source/builtin_macros" }
-vstd = { path = "../verus/source/vstd" }
+# builtin = { path = "../verus/source/builtin" }
+# builtin_macros = { path = "../verus/source/builtin_macros" }
+# vstd = { path = "../verus/source/vstd" }
+vstd = { git = "https://github.com/verus-lang/verus", rev = "baba168f92bda643455992d53efe3668af19c0e4" }
+builtin = { git = "https://github.com/verus-lang/verus", rev = "baba168f92bda643455992d53efe3668af19c0e4" }
+builtin_macros = { git = "https://github.com/verus-lang/verus", rev = "baba168f92bda643455992d53efe3668af19c0e4" }
 
 # In general, Tock discourages the use of cargo features. However for certain
 # kernel crate configuration, we have not found reasonable alternatives to
