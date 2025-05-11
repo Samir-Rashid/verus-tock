@@ -409,6 +409,7 @@ impl<'a, A: Alarm<'a>> MuxAlarm<'a, A> {
 impl<'a, A: Alarm<'a>> time::AlarmClient for MuxAlarm<'a, A> {
     /// When the underlying alarm has fired, we have to multiplex this event back to the virtual
     /// alarms that should now fire.
+    #[verifier::exec_allows_no_decreases_clause]
     fn alarm(&self) {
         // Check whether to fire each alarm. At this level, alarms are one-shot,
         // so a repeating client will set it again in the alarm() callback.

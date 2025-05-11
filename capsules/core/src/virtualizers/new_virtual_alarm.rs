@@ -59,7 +59,8 @@ pub struct VirtualMuxAlarmState<'a> {
 }
 
 impl<'a> ListNodeV<'a, VirtualMuxAlarm<'a>> for VirtualMuxAlarm<'a> {
-    fn next(&'a self, perm: builtin::Tracked<&vstd::cell::PointsTo<core::option::Option<&'a VirtualMuxAlarm<'a>>>>) -> (result: &'a ListLinkV<VirtualMuxAlarm<'a>>)
+    #[verifier::exec_allows_no_decreases_clause]
+    fn next(&'a self, perm: Tracked<&vstd::cell::PointsTo<Option<&'a VirtualMuxAlarm<'a>>>>) -> (result: &'a ListLinkV<VirtualMuxAlarm<'a>>)
         ensures
             // result == self.next.as_ref().unwrap(),
             result.0.id() == perm@.id(), // The returned ListLinkV contains the PCell that perm is for
@@ -518,6 +519,7 @@ impl<'a> MuxAlarm<'a> {
 // impl<'a> AlarmClient for MuxAlarm<'a> {
     /// When the underlying alarm has fired, we have to multiplex this event back to the virtual
     /// alarms that should now fire.
+    #[verifier::exec_allows_no_decreases_clause]
     fn alarm(&self)
         requires
             self.mux_alarm_wf(),

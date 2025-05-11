@@ -149,6 +149,7 @@ impl<'a, T: ?Sized + ListNodeV<'a, T>> ListIteratorV<'a, T> {
         }
     }
 
+    #[verifier::exec_allows_no_decreases_clause]
     pub fn last(&mut self, ghost_state: &Tracked<GhostState<'a, T>>) -> (res: Option<&'a T>)
         requires
             old(self).valid_list_iterator(ghost_state),

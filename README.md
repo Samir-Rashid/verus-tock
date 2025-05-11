@@ -17,6 +17,12 @@ To run the whole verification pipeline:
 make
 ```
 
+alternatively can build by doing
+```bash
+cd capsules/core
+make
+```
+
 To run tests: `vargo test -p rust_verify_test`
 
 Run the formatter:
