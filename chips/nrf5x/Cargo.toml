@@ -11,9 +11,9 @@ edition.workspace = true
 [dependencies]
 kernel = { path = "../../kernel" }
 enum_primitive = { path = "../../libraries/enum_primitive" }
-builtin = { path = "../../verus/source/builtin" }
-builtin_macros = { path = "../../verus/source/builtin_macros" }
-vstd = { path = "../../verus/source/vstd" }
+vstd = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
+builtin = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
+builtin_macros = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
 
 [features]
 default = []

@@ -12,7 +12,9 @@ edition.workspace = true
 kernel = { path = "../../kernel" }
 enum_primitive = { path = "../../libraries/enum_primitive" }
 tickv = { path = "../../libraries/tickv" }
-vstd = { path = "../../verus/source/vstd" }
+vstd = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
+builtin = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
+builtin_macros = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
 
 [lints]
 workspace = true

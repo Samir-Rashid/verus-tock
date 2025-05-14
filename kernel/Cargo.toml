@@ -12,10 +12,10 @@ edition.workspace = true
 tock-registers = { path = "../libraries/tock-register-interface" }
 tock-cells = { path = "../libraries/tock-cells" }
 tock-tbf = { path = "../libraries/tock-tbf" }
-builtin = { path = "../verus/source/builtin" }
-builtin_macros = { path = "../verus/source/builtin_macros" }
-vstd = { path = "../verus/source/vstd" }
 
+vstd = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
+builtin = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
+builtin_macros = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
 # In general, Tock discourages the use of cargo features. However for certain
 # kernel crate configuration, we have not found reasonable alternatives to
 # setting boolean values in kernel/src/config.rs. To make those settings configurable
