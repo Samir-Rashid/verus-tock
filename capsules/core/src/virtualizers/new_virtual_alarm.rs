@@ -86,7 +86,7 @@ impl<'a> VirtualMuxAlarm<'a> {
         &&&    self.dt_reference.id() == perms.dt_reference_perm.id()
         &&&    self.armed.id() == perms.armed_perm.id()
         // TODO: MUST assert WF for the MuxAlarm
-        &&& self.mux.mux_alarm_wf()
+        &&& self.mux.mux_alarm_wf((perms.mux_perm))
         // &&& self.client.client_counter_wf()
     }
 
@@ -94,7 +94,7 @@ impl<'a> VirtualMuxAlarm<'a> {
     pub fn new(mux_alarm: &'a MuxAlarm<'a>, Tracked(mux_perm): Tracked<&mut MuxAlarmPerms>, client_counter: &'a ClientCounter) -> (res: (VirtualMuxAlarm<'a>, Tracked<VirtualMuxAlarmPerms<'a>>))
         requires
             mux_alarm.virtual_alarms.is_some(),
-            mux_alarm.mux_alarm_wf(),
+            mux_alarm.mux_alarm_wf(old(mux_perm)),
         ensures
             res.0.wf(&res.1@),
             res.0.mux == mux_alarm,
@@ -143,7 +143,7 @@ impl<'a> VirtualMuxAlarm<'a> {
 
     /// Call this method immediately after new() to link this to the mux, otherwise alarms won't
     /// fire
-    pub fn setup(&'a self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms<'a>>, Tracked(mux_perms): Tracked<&mut MuxAlarmPerms<'a>>)
+    pub fn setup(&'a self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms<'a>>, Tracked(_mux_perms): Tracked<&mut MuxAlarmPerms<'a>>)
         requires
             self.wf(perms),
             // self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(self.mux.state@.virtual_alarms.unwrap())), // If adding to list
@@ -153,7 +153,7 @@ impl<'a> VirtualMuxAlarm<'a> {
             // self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(self.mux.state@.virtual_alarms.unwrap())),
             // old(self.mux.state@.virtual_alarms.unwrap()@.cells.len()) + 1 == self.mux.state@.virtual_alarms.unwrap()@.cells.len(),
     {
-        let tracked mut arg0 = mux_perms.virtual_alarms_state.tracked_unwrap().get();
+        let tracked mut arg0 = perms.mux_perm.virtual_alarms_state.tracked_unwrap().get();
         let mut arg1 = Tracked(arg0);
         self.mux.virtual_alarms.as_ref().unwrap().push_head(self, Tracked(perms.next_perm), &mut (arg1));
     }
@@ -164,9 +164,9 @@ impl<'a> VirtualMuxAlarm<'a> {
 
     fn now(&self, Tracked(mux_perms): Tracked<&mut MuxAlarmPerms>) -> (result: Ticks32)
         requires
-            self.mux.mux_alarm_wf(),
+            self.mux.mux_alarm_wf(old(mux_perms)),
         ensures
-            self.mux.mux_alarm_wf(),
+            self.mux.mux_alarm_wf((mux_perms)),
     {
         self.mux.alarm.now(Tracked(&mut *mux_perms.alarm))
     }
@@ -185,7 +185,7 @@ impl<'a> VirtualMuxAlarm<'a> {
     //     self.client.set(client);
     // }
 
-    fn disarm(&self, Tracked(perms): Tracked<&mut VirtualMuxAlarmPerms>, Tracked(mux_perms): Tracked<&mut MuxAlarmPerms>) -> (result: Result<(), ErrorCode>)
+    fn disarm(&self, Tracked(perms): Tracked<&mut VirtualMuxAlarmPerms>, Tracked(_mux_perms): Tracked<&mut MuxAlarmPerms>) -> (result: Result<(), ErrorCode>)
         requires
             self.wf(old(perms)),
         // TODO: fix all the requires clauses
@@ -208,18 +208,17 @@ impl<'a> VirtualMuxAlarm<'a> {
             return Ok(());
         }
 
-        let tracked mut armed_perms = perms.armed_perm;
-        self.armed.replace(Tracked(&mut armed_perms), false);
-        assert(perms.armed_perm.value() == false); // assertion failed
+        self.armed.replace(Tracked(&mut perms.armed_perm), false);
+        assert(perms.armed_perm.value() == false);
 
-        let enabled = self.mux.enabled.borrow(Tracked(&mux_perms.enabled_perm)) - 1;
-        let tracked mut enabled_perms = mux_perms.enabled_perm;
-        self.mux.enabled.replace(Tracked(&mut enabled_perms), enabled);
+        let enabled = self.mux.enabled.borrow(Tracked(&perms.mux_perm.enabled_perm)) - 1;
+        // let tracked mut enabled_perms = mux_perms.enabled_perm;
+        self.mux.enabled.replace(Tracked(&mut perms.mux_perm.enabled_perm), enabled);
 
         // If there are not more enabled alarms, disable the underlying alarm
         // completely.
         if enabled == 0 {
-            let _ = self.mux.alarm.disarm(Tracked(&mut *mux_perms.alarm));
+            let _ = self.mux.alarm.disarm(Tracked(&mut *perms.mux_perm.alarm));
         }
         Ok(())
     }
@@ -236,9 +235,12 @@ impl<'a> VirtualMuxAlarm<'a> {
         *self.armed.borrow(Tracked(&perms.armed_perm))
     }
 
+    // TODO: this is what I need to figure out. What's the exact path to calling this
+    // fn? Is it the case that I own the mux alarm and its perms when calling?
     fn set_alarm(&self, reference: Ticks32, dt: Ticks32, Tracked(perms): Tracked<&mut VirtualMuxAlarmPerms>, Tracked(mux_perms): Tracked<&mut MuxAlarmPerms>)
         requires
             self.wf(old(perms)),
+            self.mux.mux_alarm_wf(old(mux_perms))
         // requires
         //     self@@.dt_reference.is_init() && self@@.dt_reference.id() == self.dt_reference.id(),
         //     self@@.armed.is_init() && self@@.armed.id() == self.armed.id(),
@@ -251,7 +253,7 @@ impl<'a> VirtualMuxAlarm<'a> {
             // Complex ensures based on the commented logic involving dt_reference update,
             // armed status, mux.enabled count, and potentially calling self.mux.set_alarm.
     {
-        let enabled = *self.mux.enabled.borrow(Tracked(&mux_perms.enabled_perm));
+        let enabled = *self.mux.enabled.borrow(Tracked(&perms.mux_perm.enabled_perm));
         let half_max = Ticks32::half_max_value();
         // If the dt is more than half of the available time resolution, then we need to break
         // up the alarm into two internal alarms. This ensures that our internal comparisons of
@@ -285,7 +287,7 @@ impl<'a> VirtualMuxAlarm<'a> {
         let tracked mut armed_perm = perms.armed_perm;
         match self.armed.replace(Tracked(&mut armed_perm), true){
             false => {
-                let tracked mut enabled_perm = mux_perms.enabled_perm;
+                let tracked mut enabled_perm = perms.mux_perm.enabled_perm;
                 if enabled < usize::MAX {
                     self.mux.enabled.replace(Tracked(&mut enabled_perm), enabled + 1);
                 } else {
@@ -299,7 +301,7 @@ impl<'a> VirtualMuxAlarm<'a> {
         if enabled == 0 {
             //debug!("virtual_alarm: first alarm: set it.");
             self.mux.set_alarm(reference, dt, Tracked(mux_perms));
-        } else if !*self.mux.firing.borrow(Tracked(&mux_perms.firing_perm)) {
+        } else if !*self.mux.firing.borrow(Tracked(&perms.mux_perm.firing_perm)) {
             // If firing is true, the mux will scan all the alarms after
             // firing and pick the soonest one so do not need to modify the
             // mux. Otherwise, this is an alarm
@@ -313,11 +315,11 @@ impl<'a> VirtualMuxAlarm<'a> {
             //    window of the current earliest alarm. This means the
             //    current earliest alarm hasn't fired yet (it is in the future).
             // -pal
-            let cur_alarm = self.mux.alarm.get_alarm(Tracked(&*mux_perms.alarm));
-            let now = self.mux.alarm.now(Tracked(&mut *mux_perms.alarm));
+            let cur_alarm = self.mux.alarm.get_alarm(Tracked(&*perms.mux_perm.alarm));
+            let now = self.mux.alarm.now(Tracked(&mut *perms.mux_perm.alarm));
             let expiration = reference.wrapping_add(dt);
             if !cur_alarm.within_range(reference, expiration) {
-                let next = *self.mux.next_tick_vals.borrow(Tracked(&mux_perms.next_tick_vals_perm));
+                let next = *self.mux.next_tick_vals.borrow(Tracked(&perms.mux_perm.next_tick_vals_perm));
 
                 let cond = match next {
                     None => true,
@@ -354,26 +356,23 @@ impl<'a> VirtualMuxAlarm<'a> {
         dt_reference.reference_plus_dt().wrapping_add(extension)
     }
 
-    fn minimum_dt(&self, Tracked(mux_perms): Tracked<&mut MuxAlarmPerms>) -> (result: Ticks32)
-        requires
-            self.mux.mux_alarm_wf(),
+    fn minimum_dt(&self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms>, Tracked(_mux_perms): Tracked<&mut MuxAlarmPerms>) -> (result: Ticks32)
         // requires
-        //     self.mux.alarm is valid, // To call minimum_dt()
+        //     self.mux.mux_alarm_wf(old(perms.mux_perm)),
         ensures
-            self.mux.mux_alarm_wf(),
+            self.mux.mux_alarm_wf((perms.mux_perm)),
         //     // result.get_value() == self.mux.alarm.minimum_dt().get_value(),
-        //     true, // Assuming self.mux.alarm.minimum_dt() returns a valid Ticks
     {
-        self.mux.alarm.minimum_dt(Tracked(&*mux_perms.alarm))
+        self.mux.alarm.minimum_dt(Tracked(&*perms.mux_perm.alarm))
     }
 
     fn alarm(&self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms>, Tracked(client_state): Tracked<&mut ClientCounterState>)
         requires
             self.wf(perms),
-        // requires
-            // self.client is valid to call alarm()
+            self.client.client_counter_wf(old(client_state)),
         ensures
             self.wf(perms),
+            self.client.client_counter_wf((client_state)),
             // self.client.count() might have changed if alarm was called
     {
         self.client.alarm(Tracked(&mut *client_state));
@@ -410,29 +409,28 @@ pub tracked struct MuxAlarmPerms<'a> {
 }
 
 impl<'a> MuxAlarm<'a> {
-    pub closed spec fn mux_alarm_wf(&self) -> bool {
-        true
-        // TODO: restore
-/*         &&& self@@.virtual_alarms_state.is_some()
-        &&& self@@.enabled_perm.is_init()
-        &&& self@@.alarm.fake_alarm_wf()
-        &&& self@@.firing_perm.is_init()
-        &&& self@@.fire_time.is_none()
-        &&& self@@.next_tick_vals_perm.is_init()
-        &&& self@@.next_tick_vals_perm.value().is_none()
-        &&& self.firing.id() === self@@.firing_perm.id()
-        &&& self.enabled.id() === self@@.enabled_perm.id()
-        &&& self.next_tick_vals.id() === self@@.next_tick_vals_perm.id()
-        &&& self@@.next_tick_vals_perm.is_init()
+    pub open spec fn mux_alarm_wf(&self, perms: &MuxAlarmPerms) -> bool {
+        &&& perms.virtual_alarms_state.is_some()
+        &&& perms.enabled_perm.is_init()
+        &&& (self.alarm).fake_alarm_wf(&perms.alarm)
+        &&& perms.firing_perm.is_init()
+        &&& perms.fire_time.is_none()
+        &&& perms.next_tick_vals_perm.is_init()
+        &&& perms.next_tick_vals_perm.value().is_none()
+        &&& self.firing.id() === perms.firing_perm.id()
+        &&& self.enabled.id() === perms.enabled_perm.id()
+        &&& self.next_tick_vals.id() === perms.next_tick_vals_perm.id()
+        &&& perms.next_tick_vals_perm.is_init()
         &&& self.virtual_alarms.is_some()
-        &&& self@@.fire_time.is_none() ==> self@@.firing_perm.value() == false
-        &&& self.alarm.fake_alarm_wf()
-        &&& self.virtual_alarms.unwrap().well_formed_list(&(self@@.virtual_alarms_state.get_Some_0())) */
+        &&& perms.fire_time.is_none() ==> perms.firing_perm.value() == false
+        &&& self.virtual_alarms.unwrap().well_formed_list(&(perms.virtual_alarms_state.get_Some_0())) 
     }
 
     pub const fn new(fake_alarm: &'a FakeAlarm, Tracked(fake_alarm_perms): Tracked<&mut FakeAlarmPerms>) -> (res: (MuxAlarm<'a>, Tracked<MuxAlarmPerms<'a>>))
+        requires
+            fake_alarm.fake_alarm_wf(old(fake_alarm_perms)),
         ensures
-            res.0.mux_alarm_wf(),
+            res.0.mux_alarm_wf((&res.1@)),
             res.1@.enabled_perm.value() == 0,
             res.1@.firing_perm.value() == false,
             res.1@.next_tick_vals_perm.value().is_none(), // Option<(Ticks32, Ticks32)>
@@ -470,20 +468,19 @@ impl<'a> MuxAlarm<'a> {
 
     pub fn set_alarm(&self, reference: Ticks32, dt: Ticks32, Tracked(perms): Tracked<&mut MuxAlarmPerms>)
         requires
-            self.mux_alarm_wf(),
+            self.mux_alarm_wf(old(perms)),
             // Any other preconditions from original Tock logic, e.g., dt >= minimum_dt
         ensures
-            self.mux_alarm_wf(),
             // self@@.next_tick_vals_perm.id() === old(&mut self)@@.next_tick_vals_perm.id(), // ID remains same?
-            self.next_tick_vals.id() === perms.next_tick_vals_perm@.pcell,
+            // self.next_tick_vals.id() === perms.next_tick_vals_perm@.pcell,
             perms.next_tick_vals_perm.is_init(), // Still initialized, unsure why this isn't meeting recommendations
             perms.next_tick_vals_perm.value().is_some(),
             perms.next_tick_vals_perm.value().unwrap().0.get_value() == reference.get_value(),
             perms.next_tick_vals_perm.value().unwrap().1.get_value() == dt.get_value(),
+            self.mux_alarm_wf((perms)),
             // Underlying hardware alarm self.alarm might be set
     {
-        let tracked mut next_tick_vals_perms = perms.next_tick_vals_perm;
-        self.next_tick_vals.replace(Tracked(&mut next_tick_vals_perms), Some((reference, dt)));
+        self.next_tick_vals.replace(Tracked(&mut perms.next_tick_vals_perm), Some((reference, dt)));
         // assert(self@@.next_tick_vals_perm.value().is_some());
         self.alarm.set_alarm(reference, dt, Tracked(&mut *perms.alarm));
         // assert(self@@.next_tick_vals_perm.value().is_some());
@@ -491,9 +488,9 @@ impl<'a> MuxAlarm<'a> {
 
     pub fn disarm(&self, Tracked(perms): Tracked<&mut MuxAlarmPerms>)
         requires
-            self.mux_alarm_wf(),
+            self.mux_alarm_wf(old(perms)),
         ensures
-            self.mux_alarm_wf(),
+            self.mux_alarm_wf((perms)),
             // self.next_tick_vals.id() === old(self).next_tick_vals.id(),
             self.next_tick_vals.id() === perms.next_tick_vals_perm@.pcell,
             perms.next_tick_vals_perm.is_init(),
@@ -510,10 +507,11 @@ impl<'a> MuxAlarm<'a> {
 // impl<'a> AlarmClient for MuxAlarm<'a> {
     /// When the underlying alarm has fired, we have to multiplex this event back to the virtual
     /// alarms that should now fire.
+    #[verifier::external_body] // TODO: ignore this for now
     #[verifier::exec_allows_no_decreases_clause]
-    fn alarm(&'a self, Tracked(perms): Tracked<&mut MuxAlarmPerms>, )
+    fn alarm(&'a self, Tracked(perms): Tracked<&mut MuxAlarmPerms>, Tracked(client_perm): Tracked<&mut ClientCounterState>)
         requires
-            self.mux_alarm_wf(),
+            self.mux_alarm_wf(old(perms)),
         // requires
         //     self@@.firing.is_init() && self@@.firing.id() == self.firing.id(),
         //     // self.virtual_alarms is Some and well_formed_list with self@@.virtual_alarms.unwrap()
@@ -521,7 +519,7 @@ impl<'a> MuxAlarm<'a> {
         //     // self.alarm is valid for now() call.
             old(perms).enabled_perm.is_init() && old(perms).enabled_perm.id() == self.enabled.id(),
         ensures
-            self.mux_alarm_wf(),
+            self.mux_alarm_wf((perms)),
             // Complex ensures based on iterating virtual_alarms, checking armed status,
             // potentially calling their alarm() methods, updating their armed status,
             // updating self@@.enabled, and then re-evaluating the next alarm for self.alarm.
@@ -529,127 +527,127 @@ impl<'a> MuxAlarm<'a> {
     {
         // Check whether to fire each alarm. At this level, alarms are one-shot,
         // so a repeating client will set it again in the alarm() callback.
-        // let tracked mut firing_perm = perms.firing_perm;
-        // self.firing.replace(Tracked(&mut firing_perm), true);
-        // let mut iterator = ListIteratorV::new(
-        //     self.virtual_alarms.as_ref().unwrap(),
-        // &Tracked(perms.virtual_alarms_state.tracked_unwrap().get()));
+        let tracked mut firing_perm = perms.firing_perm;
+        self.firing.replace(Tracked(&mut firing_perm), true);
+        let mut iterator = ListIteratorV::new(
+            self.virtual_alarms.as_ref().unwrap(),
+        &Tracked(perms.virtual_alarms_state.tracked_unwrap().get()));
 
-        // let tracked index : int = 0;
-        // // for cur in self.virtual_alarms.iter() {
-        // // while let Some(cur) = current {
-        // loop {
-        //     match iterator.next(&Tracked(perms.virtual_alarms_state.tracked_unwrap().get())) {
-        //         Some(cur) => {
-        //             let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().index(index);
+        let tracked index : int = 0;
+        // for cur in self.virtual_alarms.iter() {
+        // while let Some(cur) = current {
+        loop {
+            match iterator.next(&Tracked(perms.virtual_alarms_state.tracked_unwrap().get())) {
+                Some(cur) => {
+                    let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().index(index);
 
-        //             let dt_ref = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
-        //             let now = self.alarm.now(Tracked(&mut *perms.alarm));
-        //             if *cur.armed.borrow(Tracked(&virtual_perms.armed_perm)) && !now.within_range(
-        //                 dt_ref.reference,
-        //                 dt_ref.reference_plus_dt(),
-        //             ) {
-        //                 if dt_ref.extended {
-        //                     let tracked mut dt_ref_perm = virtual_perms.dt_reference_perm;
-        //                     cur.dt_reference.replace(Tracked(&mut dt_ref_perm),
-        //                         TickDtReference {
-        //                             reference: dt_ref.reference_plus_dt(),
-        //                             dt: Ticks32::half_max_value(),
-        //                             extended: false,
-        //                         },
-        //                     );
-        //                 } else {
-        //                     let tracked mut armed_perm = virtual_perms.armed_perm;
-        //                     cur.armed.replace(Tracked(&mut armed_perm), false);
-        //                     let tracked mut enabled_perm = perms.enabled_perm;
-        //                     self.enabled.replace(Tracked(&mut enabled_perm), self.enabled.borrow(Tracked(&perms.enabled_perm)) - 1);
+                    let dt_ref = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
+                    let now = self.alarm.now(Tracked(&mut *perms.alarm));
+                    if *cur.armed.borrow(Tracked(&virtual_perms.armed_perm)) && !now.within_range(
+                        dt_ref.reference,
+                        dt_ref.reference_plus_dt(),
+                    ) {
+                        if dt_ref.extended {
+                            let tracked mut dt_ref_perm = virtual_perms.dt_reference_perm;
+                            cur.dt_reference.replace(Tracked(&mut dt_ref_perm),
+                                TickDtReference {
+                                    reference: dt_ref.reference_plus_dt(),
+                                    dt: Ticks32::half_max_value(),
+                                    extended: false,
+                                },
+                            );
+                        } else {
+                            let tracked mut armed_perm = virtual_perms.armed_perm;
+                            cur.armed.replace(Tracked(&mut armed_perm), false);
+                            let tracked mut enabled_perm = perms.enabled_perm;
+                            self.enabled.replace(Tracked(&mut enabled_perm), self.enabled.borrow(Tracked(&perms.enabled_perm)) - 1);
 
-        //                     cur.alarm(Tracked(&virtual_perms));
-        //                 }
-        //             }
-        //             proof {
-        //                 index = index + 1 as int;
-        //             }
-        //         },
-        //         None => break,
-        //     }
-        //     // let mut current = self.virtual_alarms.head();
+                            cur.alarm(Tracked(&virtual_perms), Tracked(&mut *client_perm));
+                        }
+                    }
+                    proof {
+                        index = index + 1 as int;
+                    }
+                },
+                None => break,
+            }
+            // let mut current = self.virtual_alarms.head();
 
-        // }
-        // let tracked mut firing_perm = perms.firing_perm;
-        // self.firing.replace(Tracked(&mut firing_perm), false);
+        }
+        let tracked mut firing_perm = perms.firing_perm;
+        self.firing.replace(Tracked(&mut firing_perm), false);
 
-        // // Find the soonest alarm client (if any) and set the "next" underlying
-        // // alarm based on it.  This needs to happen after firing all expired
-        // // alarms since those may have reset new alarms.
-        // let now = self.alarm.now(Tracked(&mut *perms.alarm));
-        // // let next = self
-        // //     .virtual_alarms
-        // //     .iter()
-        // //     .filter(|cur| cur.armed.get())
-        // //     .min_by_key(|cur| {
-        // //         let when = cur.dt_reference.get();
-        // //         // If the alarm has already expired, then it should be
-        // //         // considered as the earliest possible (0 ticks), so it
-        // //         // will trigger as soon as possible. This can happen
-        // //         // if the alarm expired *after* it was examined in the
-        // //         // above loop.
-        // //         if !now.within_range(when.reference, when.reference_plus_dt()) {
-        // //             Ticks32::from(0u32)
-        // //         } else {
-        // //             when.reference_plus_dt().wrapping_sub(now)
-        // //         }
-        // //     })
-        // let mut iterator = ListIteratorV::new(
-        //     self.virtual_alarms.as_ref().unwrap(),
-        // &perms.virtual_alarms_state.tracked_unwrap());
-        // let mut min_ticks = None;
-        // let mut min_alarm = None;
-        // let mut min_alarm_index = None;
-        // let tracked index : int = 0;
-        // loop {
-        //     match iterator.next(&Tracked(perms.virtual_alarms_state.tracked_unwrap().get())) {
-        //         Some(cur) => {
-        //             if *cur.armed.borrow(Tracked(perms.alarm.armed_perm.borrow())) {
-        //                 let tracked virtual_perms = perms.virtual_alarm_states_seq@.index(index);
-        //                 let when = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
-        //                 let ticks = if !now.within_range(when.reference, when.reference_plus_dt()) {
-        //                     Ticks32::from_or_max(0u64)
-        //                 } else {
-        //                     when.reference_plus_dt().wrapping_sub(now)
-        //                 };
+        // Find the soonest alarm client (if any) and set the "next" underlying
+        // alarm based on it.  This needs to happen after firing all expired
+        // alarms since those may have reset new alarms.
+        let now = self.alarm.now(Tracked(&mut *perms.alarm));
+        // let next = self
+        //     .virtual_alarms
+        //     .iter()
+        //     .filter(|cur| cur.armed.get())
+        //     .min_by_key(|cur| {
+        //         let when = cur.dt_reference.get();
+        //         // If the alarm has already expired, then it should be
+        //         // considered as the earliest possible (0 ticks), so it
+        //         // will trigger as soon as possible. This can happen
+        //         // if the alarm expired *after* it was examined in the
+        //         // above loop.
+        //         if !now.within_range(when.reference, when.reference_plus_dt()) {
+        //             Ticks32::from(0u32)
+        //         } else {
+        //             when.reference_plus_dt().wrapping_sub(now)
+        //         }
+        //     })
+        let mut iterator = ListIteratorV::new(
+            self.virtual_alarms.as_ref().unwrap(),
+        &perms.virtual_alarms_state.tracked_unwrap());
+        let mut min_ticks = None;
+        let mut min_alarm = None;
+        let mut min_alarm_index = None;
+        let tracked index : int = 0;
+        loop {
+            match iterator.next(&Tracked(perms.virtual_alarms_state.tracked_unwrap().get())) {
+                Some(cur) => {
+                    if *cur.armed.borrow(Tracked(perms.alarm.armed_perm.borrow())) {
+                        let tracked virtual_perms = perms.virtual_alarm_states_seq@.index(index);
+                        let when = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
+                        let ticks = if !now.within_range(when.reference, when.reference_plus_dt()) {
+                            Ticks32::from_or_max(0u64)
+                        } else {
+                            when.reference_plus_dt().wrapping_sub(now)
+                        };
 
-        //                 match min_ticks {
-        //                     None => {
-        //                         min_ticks = Some(ticks);
-        //                         min_alarm = Some(cur);
-        //                         min_alarm_index = Some(index);
-        //                     },
-        //                     Some(min) if ticks.into_usize() < min.into_usize() => {
-        //                         min_ticks = Some(ticks);
-        //                         min_alarm = Some(cur);
-        //                         min_alarm_index = Some(index);
-        //                     },
-        //                     _ => {},
-        //                 }
-        //             }
-        //             proof {
-        //                 index = index + 1 as int;
-        //             }
-        //         },
-        //         None => break ,
-        //     }
-        // }
+                        match min_ticks {
+                            None => {
+                                min_ticks = Some(ticks);
+                                min_alarm = Some(cur);
+                                min_alarm_index = Some(index);
+                            },
+                            Some(min) if ticks.into_usize() < min.into_usize() => {
+                                min_ticks = Some(ticks);
+                                min_alarm = Some(cur);
+                                min_alarm_index = Some(index);
+                            },
+                            _ => {},
+                        }
+                    }
+                    proof {
+                        index = index + 1 as int;
+                    }
+                },
+                None => break ,
+            }
+        }
 
-        // let next = min_alarm;
+        let next = min_alarm;
 
-        // // Set the alarm.
-        // if let Some(valrm) = next {
-        //     let dt_reference = valrm.dt_reference.borrow(Tracked(&perms.virtual_alarm_states_seq@.index(min_alarm_index.unwrap()).dt_reference_perm));
-        //     self.set_alarm(dt_reference.reference, dt_reference.dt, Tracked(&mut *perms));
-        // } else {
-        //     self.disarm(Tracked(&mut *perms));
-        // }
+        // Set the alarm.
+        if let Some(valrm) = next {
+            let dt_reference = valrm.dt_reference.borrow(Tracked(&perms.virtual_alarm_states_seq@.index(min_alarm_index.unwrap()).dt_reference_perm));
+            self.set_alarm(dt_reference.reference, dt_reference.dt, Tracked(&mut *perms));
+        } else {
+            self.disarm(Tracked(&mut *perms));
+        }
     }
 }
 
@@ -1324,7 +1322,7 @@ pub tracked struct FakeAlarmPerms {
 }
 
 impl<'a> FakeAlarm<'a> {
-    spec fn fake_alarm_wf(&self, perms: &FakeAlarmPerms) -> bool
+    pub closed spec fn fake_alarm_wf(&self, perms: &FakeAlarmPerms) -> bool
     {
         &&& perms.now_perm@.is_init()
         &&& perms.reference_perm@.is_init()
@@ -1346,6 +1344,7 @@ impl<'a> FakeAlarm<'a> {
             result.1@.reference_perm@.mem_contents().value().ticks == 0,
             result.1@.dt_perm@.mem_contents().value().ticks == 0,
             result.1@.armed_perm@.mem_contents().value() == false,
+            result.0.fake_alarm_wf(&result.1@),
     {
         let (now, Tracked(now_perm)) = PCell::new(1_000u32.into());
         let (reference, Tracked(reference_perm)) = PCell::new(0u32.into());
@@ -1391,8 +1390,10 @@ impl<'a> FakeAlarm<'a> {
     fn trigger_next_alarm(&self, Tracked(perms): Tracked<&mut FakeAlarmPerms>, Tracked(client_perm): Tracked<&mut ClientCounterState>) -> (result: bool)
         requires
             self.fake_alarm_wf(old(perms)),
+            self.client.client_counter_wf(old(client_perm)),
         ensures
             self.fake_alarm_wf(perms),
+            self.client.client_counter_wf(client_perm),
         // ensures
             // If !old(self).is_armed(), result is false and state is unchanged.
             // Otherwise, self.now is updated, self.client.alarm() is called, and result is self.is_armed().
@@ -1408,8 +1409,8 @@ impl<'a> FakeAlarm<'a> {
         if !self.is_armed(Tracked(&*perms)) {
             return false;
         }
-        let tracked mut now_perm = perms.now_perm.get();
-        self.now.replace(Tracked(&mut now_perm),
+        // let tracked mut now_perm = perms.now_perm.borrow_mut();
+        self.now.replace(Tracked(&mut perms.now_perm.borrow_mut()),
             self.reference
                 .borrow(Tracked(perms.reference_perm.borrow()))
                 .wrapping_add(*self.dt.borrow(Tracked(perms.dt_perm.borrow())))
@@ -1502,15 +1503,10 @@ impl<'a> FakeAlarm<'a> {
             perms.dt_perm@.mem_contents().value().ticks == dt.ticks,
             perms.armed_perm@.mem_contents().value() == true,
     {
-        let tracked mut ref_perm = perms.reference_perm.get();
-        self.reference.replace(Tracked(&mut ref_perm), reference);
+        self.reference.replace(Tracked(&mut perms.reference_perm.borrow_mut()), reference);
         assert(reference.ticks == perms.reference_perm@.mem_contents().value().ticks);
-
-        let tracked mut dt_perm = perms.dt_perm.get();
-        self.dt.replace(Tracked(&mut dt_perm), dt);
-
-        let tracked mut armed_perm = perms.armed_perm.get();
-        self.armed.replace(Tracked(&mut armed_perm), true);
+        self.dt.replace(Tracked(&mut perms.dt_perm.borrow_mut()), dt);
+        self.armed.replace(Tracked(&mut perms.armed_perm.borrow_mut()), true);
     }
 
     fn get_alarm(&self, Tracked(perms): Tracked<&FakeAlarmPerms>) -> (result: Ticks32)
@@ -1532,8 +1528,8 @@ impl<'a> FakeAlarm<'a> {
     }
 
     fn disarm(&self, Tracked(perms): Tracked<&mut FakeAlarmPerms>) -> (result: Result<(), ErrorCode>)
-        // requires
-            // old(self).fake_alarm_wf(perms),
+        requires
+            (self).fake_alarm_wf(old(perms)),
             // Should require `armed == true`?
             // perms.armed_perm@.id() === old(self).armed.id(),
         ensures
@@ -1542,8 +1538,9 @@ impl<'a> FakeAlarm<'a> {
             perms.armed_perm@.mem_contents().value() == false,
             result == Ok::<(), ErrorCode>(()),
     {
-        let tracked mut armed_perm = perms.armed_perm.get();
-        self.armed.replace(Tracked(&mut armed_perm), false);
+        self.armed.replace(Tracked(&mut perms.armed_perm.borrow_mut()), false);
+        assert(perms.armed_perm@.mem_contents().is_init() == true);
+        assert(perms.armed_perm@.mem_contents().value() == false);
         Ok(())
     }
 
@@ -1628,8 +1625,10 @@ impl<'a> ClientCounter {
 fn run_until_disarmed(alarm: &mut FakeAlarm, Tracked(perms): Tracked<&mut FakeAlarmPerms>, Tracked(client_perm): Tracked<&mut ClientCounterState>)
     requires
         old(alarm).fake_alarm_wf(old(perms)),
+        old(alarm).client.client_counter_wf(old(client_perm)),
     ensures
         alarm.fake_alarm_wf(perms),
+        alarm.client.client_counter_wf((client_perm)),
         // Either alarm is not armed, or loop executed at most 20 times.
             // State of alarm is modified by trigger_next_alarm calls.m
         // (!alarm.is_armed()) || true, // Second part is tautology if loop count matters for ensures
@@ -1639,7 +1638,7 @@ fn run_until_disarmed(alarm: &mut FakeAlarm, Tracked(perms): Tracked<&mut FakeAl
         invariant // needs loop invariant of wf
             alarm.fake_alarm_wf(perms),
             // alarm.armed_perm@.id() === alarm.armed.id(),
-            // alarm.client.client_counter_wf(),
+            alarm.client.client_counter_wf(client_perm),
             // loop invariant of count
             // alarm.client.count() == old(alarm).client.count() + 1, // TODO: URGENT: should try proving this
         {
