@@ -16,5 +16,9 @@ vstd = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340
 builtin = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
 builtin_macros = { git = "https://github.com/verus-lang/verus", rev = "bfde1944873151cd340b951816d932740c30936f" }
 
+# Used for `cargo verus verify`
+# [package.metadata.verus]
+# verify = true
+
 [lints]
 workspace = true
