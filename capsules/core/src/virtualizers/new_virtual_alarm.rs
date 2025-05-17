@@ -211,6 +211,7 @@ impl<'a> VirtualMuxAlarm<'a> {
         self.armed.replace(Tracked(&mut perms.armed_perm), false);
         assert(perms.armed_perm.value() == false);
 
+        // NOTE: should add invariant on mux.enabled so it's positive
         let enabled = self.mux.enabled.borrow(Tracked(&perms.mux_perm.enabled_perm)) - 1;
         // let tracked mut enabled_perms = mux_perms.enabled_perm;
         self.mux.enabled.replace(Tracked(&mut perms.mux_perm.enabled_perm), enabled);
@@ -357,10 +358,10 @@ impl<'a> VirtualMuxAlarm<'a> {
     }
 
     fn minimum_dt(&self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms>, Tracked(_mux_perms): Tracked<&mut MuxAlarmPerms>) -> (result: Ticks32)
-        // requires
-        //     self.mux.mux_alarm_wf(old(perms.mux_perm)),
+        requires
+            self.mux.mux_alarm_wf(perms.mux_perm),
         ensures
-            self.mux.mux_alarm_wf((perms.mux_perm)),
+            self.mux.mux_alarm_wf(perms.mux_perm),
         //     // result.get_value() == self.mux.alarm.minimum_dt().get_value(),
     {
         self.mux.alarm.minimum_dt(Tracked(&*perms.mux_perm.alarm))
@@ -416,7 +417,6 @@ impl<'a> MuxAlarm<'a> {
         &&& perms.firing_perm.is_init()
         &&& perms.fire_time.is_none()
         &&& perms.next_tick_vals_perm.is_init()
-        &&& perms.next_tick_vals_perm.value().is_none()
         &&& self.firing.id() === perms.firing_perm.id()
         &&& self.enabled.id() === perms.enabled_perm.id()
         &&& self.next_tick_vals.id() === perms.next_tick_vals_perm.id()
@@ -433,11 +433,12 @@ impl<'a> MuxAlarm<'a> {
             res.0.mux_alarm_wf((&res.1@)),
             res.1@.enabled_perm.value() == 0,
             res.1@.firing_perm.value() == false,
-            res.1@.next_tick_vals_perm.value().is_none(), // Option<(Ticks32, Ticks32)>
+            res.1@.next_tick_vals_perm.value().is_none(),
             res.0.next_tick_vals.id() === res.1@.next_tick_vals_perm@.pcell,
             res.1@.virtual_alarm_states_seq@.len() == 0,
             res.1@.alarm == fake_alarm_perms,
             res.1@.fire_time.is_none(),
+            fake_alarm.fake_alarm_wf(fake_alarm_perms)
     {
         let (enabled, Tracked(enabled_perm)) = PCell::new(0);
         let (firing, Tracked(firing_perm)) = PCell::new(false);
@@ -469,6 +470,7 @@ impl<'a> MuxAlarm<'a> {
     pub fn set_alarm(&self, reference: Ticks32, dt: Ticks32, Tracked(perms): Tracked<&mut MuxAlarmPerms>)
         requires
             self.mux_alarm_wf(old(perms)),
+
             // Any other preconditions from original Tock logic, e.g., dt >= minimum_dt
         ensures
             // self@@.next_tick_vals_perm.id() === old(&mut self)@@.next_tick_vals_perm.id(), // ID remains same?
@@ -484,6 +486,20 @@ impl<'a> MuxAlarm<'a> {
         // assert(self@@.next_tick_vals_perm.value().is_some());
         self.alarm.set_alarm(reference, dt, Tracked(&mut *perms.alarm));
         // assert(self@@.next_tick_vals_perm.value().is_some());
+
+        // assert(perms.virtual_alarms_state.is_some());
+        // assert(perms.enabled_perm.is_init());
+        // assert((self.alarm).fake_alarm_wf(&perms.alarm));
+        // assert(perms.firing_perm.is_init());
+        // assert(perms.fire_time.is_none());
+        // assert(perms.next_tick_vals_perm.is_init());
+        // assert(self.firing.id() === perms.firing_perm.id());
+        // assert(self.enabled.id() === perms.enabled_perm.id());
+        // assert(self.next_tick_vals.id() === perms.next_tick_vals_perm.id());
+        // assert(perms.next_tick_vals_perm.is_init());
+        // assert(self.virtual_alarms.is_some());
+        // assert(perms.fire_time.is_none() ==> perms.firing_perm.value() == false);
+        // assert(self.virtual_alarms.unwrap().well_formed_list(&(perms.virtual_alarms_state.get_Some_0())) );
     }
 
     pub fn disarm(&self, Tracked(perms): Tracked<&mut MuxAlarmPerms>)
@@ -498,8 +514,7 @@ impl<'a> MuxAlarm<'a> {
             // self.alarm.disarm() implies the underlying alarm is no longer armed.
             // The Result<(), ErrorCode> from self.alarm.disarm() is Ok(()).
     {
-        let tracked mut next_tick_vals_perms = perms.next_tick_vals_perm;
-        self.next_tick_vals.write(Tracked(&mut next_tick_vals_perms), None);
+        self.next_tick_vals.write(Tracked(&mut perms.next_tick_vals_perm), None);
         let _ = self.alarm.disarm(Tracked(&mut *perms.alarm));
     }
 // }
@@ -1654,20 +1669,23 @@ fn main()
     // write dummy positive tests
     { // One alarm will fire
         let (client, Tracked(client_perm)) = ClientCounter::new(); // TODO: alarm needs to use this client
-        let (mut alarm, Tracked(perms)) = FakeAlarm::new(&client, Tracked(&mut client_perm));
+        let (mut fake_alarm, Tracked(perms)) = FakeAlarm::new(&client, Tracked(&mut client_perm));
 
-        let (mux_alarm, Tracked(mux_perms)) = MuxAlarm::new(&alarm, Tracked(&mut perms));
+        let (mux_alarm, Tracked(mux_perms)) = MuxAlarm::new(&fake_alarm, Tracked(&mut perms));
 
-        mux_alarm.set_alarm(alarm.now(Tracked(&mut perms)), Ticks32::from(10), Tracked(&mut mux_perms));
-        run_until_disarmed(&mut alarm, Tracked(&mut perms), Tracked(&mut client_perm)); // local_alarm is likely not armed by the above.
+        let reference = fake_alarm.now(Tracked(&mut perms));
+        assume(fake_alarm.client.client_counter_wf((&mut client_perm)));
+        mux_alarm.set_alarm(reference, Ticks32::from(10), Tracked(&mut mux_perms));
+
+        run_until_disarmed(&mut fake_alarm, Tracked(&mut perms), Tracked(&mut client_perm)); // local_alarm is likely not armed by the above.
 
         let fired_count = client.count(Tracked(&mut client_perm)); // This will be 0.
         proof{
             // This assertion will likely fail with current code structure as `fired_count` is 0.
             // To make it 1, `local_client_counter_for_assertion.alarm()` must be called.
-            assert(1 == 0);
             assert(fired_count == 1);
             assert(fired_count == 0); // Based on current logic.
+            assert(1 == 0);
         }
 
 
