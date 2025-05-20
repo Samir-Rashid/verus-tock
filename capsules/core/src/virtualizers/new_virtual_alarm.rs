@@ -1354,6 +1354,9 @@ impl<'a> FakeAlarm<'a> {
         requires
             client.client_counter_wf(client_perm),
         ensures
+            client.cnt.id() == client_perm.count.id(),
+            result.0.client.cnt.id() == client_perm.count.id(),
+            result.0.client.cnt.id() == client.cnt.id(),
             // result.0.fake_alarm_wf(&result.1),
             result.1@.now_perm@.mem_contents().value().ticks == 1_000,
             result.1@.reference_perm@.mem_contents().value().ticks == 0,
@@ -1584,7 +1587,10 @@ impl<'a> FakeAlarm<'a> {
     }
 }
 
-pub struct ClientCounter(PCell<usize>);
+pub struct ClientCounter {
+    pub cnt: PCell<usize>,
+}
+
 pub tracked struct ClientCounterState {
     pub tracked count: PointsTo<usize>,
 }
@@ -1592,17 +1598,17 @@ pub tracked struct ClientCounterState {
 impl<'a> ClientCounter {
     pub closed spec fn client_counter_wf(&self, state: &ClientCounterState) -> bool {
         &&& state.count.is_init()
-        &&& self.0.id() === state.count.id()
+        &&& self.cnt.id() === state.count.id()
     }
 
     fn new() -> (result: (ClientCounter, Tracked<ClientCounterState>))
         ensures
             result.0.client_counter_wf(&result.1@),
             result.1@.count.mem_contents().value() == 0,
-            result.0.0.id() === result.1@.count.id(),
+            result.0.cnt.id() === result.1@.count.id(),
     {
         let (cell, Tracked(count_perm)) = PCell::new(0);
-        (ClientCounter(cell), Tracked(ClientCounterState { count: count_perm }))
+        (ClientCounter { cnt: cell }, Tracked(ClientCounterState { count: count_perm }))
     }
 
     fn count(&self, Tracked(state): Tracked<&mut ClientCounterState>) -> (result: usize)
@@ -1610,9 +1616,9 @@ impl<'a> ClientCounter {
             self.client_counter_wf(old(state)),
         ensures
             result == state.count.value(),
-            self.0.id() === state.count.id(),
+            self.cnt.id() === state.count.id(),
     {
-        *self.0.borrow(Tracked(&state.count))
+        *self.cnt.borrow(Tracked(&state.count))
     }
 // }
 //
@@ -1626,14 +1632,14 @@ impl<'a> ClientCounter {
         //     // state.count remains unchanged as it's not modified here.
         //     state.count == old(state).count,
     {
-        let old_count_val = *self.0.borrow(Tracked(&state.count));
+        let old_count_val = *self.cnt.borrow(Tracked(&state.count));
         let new_count_val = if old_count_val == usize::MAX {
             0
         } else {
             old_count_val + 1
         };
         let tracked mut count_perm = state.count;
-        self.0.replace(Tracked(&mut count_perm), new_count_val);
+        self.cnt.replace(Tracked(&mut count_perm), new_count_val);
     }
 }
 
@@ -1668,79 +1674,29 @@ fn main()
 {
     // write dummy positive tests
     { // One alarm will fire
-        let (client, Tracked(client_perm)) = ClientCounter::new(); // TODO: alarm needs to use this client
+        let (client, Tracked(client_perm)) = ClientCounter::new();
         let (mut fake_alarm, Tracked(perms)) = FakeAlarm::new(&client, Tracked(&mut client_perm));
-
         let (mux_alarm, Tracked(mux_perms)) = MuxAlarm::new(&fake_alarm, Tracked(&mut perms));
-
         let reference = fake_alarm.now(Tracked(&mut perms));
-        assume(fake_alarm.client.client_counter_wf((&mut client_perm)));
-        mux_alarm.set_alarm(reference, Ticks32::from(10), Tracked(&mut mux_perms));
 
+        assert(fake_alarm.client.cnt.id() == client.cnt.id());
+        mux_alarm.set_alarm(reference, Ticks32::from(10), Tracked(&mut mux_perms));
+        assert(fake_alarm.client.cnt.id() == client.cnt.id());
         run_until_disarmed(&mut fake_alarm, Tracked(&mut perms), Tracked(&mut client_perm)); // local_alarm is likely not armed by the above.
 
-        let fired_count = client.count(Tracked(&mut client_perm)); // This will be 0.
-        proof{
-            // This assertion will likely fail with current code structure as `fired_count` is 0.
-            // To make it 1, `local_client_counter_for_assertion.alarm()` must be called.
+        assert(client_perm.count.is_init()); // FIXME: this line is failing
+        assert(fake_alarm.client.cnt.id() == client_perm.count.id()); // FIXME: this line is failing
+        assert(fake_alarm.client.client_counter_wf((&mut client_perm))); // FIXME: this line is failing
+
+        // assert(fake_alarm.client.cnt.id() == client.cnt.id()); // TODO: the culprit line
+        // assert(client.cnt.id() == client_perm.count.id()); // FIXME: this line is failing
+
+        let fired_count = client.count(Tracked(&mut client_perm));
+        proof {
+            assert(fired_count == 1 || fired_count == 0);
             assert(fired_count == 1);
-            assert(fired_count == 0); // Based on current logic.
-            assert(1 == 0);
+            assert(fired_count == 0);
         }
-
-
-        // Let's assume the test means:
-        // 1. Create a physical alarm `alarm_phys = FakeAlarm::new()`.
-        // 2. Create a MuxAlarm `mux = MuxAlarm::new(&alarm_phys)`.
-        // 3. `alarm_phys.set_alarm_client(&mux)` (if FakeAlarm had set_alarm_client).
-        // 4. Create a VirtualMuxAlarm `virt = VirtualMuxAlarm::new(&mux)`.
-        // 5. `virt.set_alarm_client(&client_for_virt)` (if VirtualMuxAlarm had set_alarm_client).
-        // 6. `virt.set_alarm(...)`. This would arm `virt`, potentially arm `mux`, which arms `alarm_phys`.
-        // 7. `run_until_disarmed(&alarm_phys)`.
-        // 8. Check `client_for_virt.count()`.
-
-        // Given the current code:
-        // `mux.set_alarm` calls `self.next_tick_vals.write`. It does NOT call `self.alarm.set_alarm`.
-        // The Tock logic is that `VirtualMuxAlarm::set_alarm` would call `mux.set_alarm` (if conditions met).
-        // And `MuxAlarm::set_alarm` (the one that takes reference, dt) would call `self.alarm.set_alarm`.
-        // The current `MuxAlarm::set_alarm` only updates `next_tick_vals`.
-
-        // The test as written:
-        // `mux.set_alarm(alarm.now(), 10.into());`
-        // This calls the `MuxAlarm::set_alarm` which only updates `mux.next_tick_vals`.
-        // It does not arm the underlying `FakeAlarm alarm`.
-        // So `run_until_disarmed(&alarm)` will do nothing as `alarm` is not armed by this call.
-        // `alarm.now()` advances time.
-        // `client.count()` will be 0. The assertion `fired_count == 1` will fail.
-
-        // To make the test meaningful with current stubs, one would directly call `alarm.set_alarm`.
-        // Example:
-        // let test_alarm = FakeAlarm::new(); // This FakeAlarm has its own internal ClientCounter.
-        // test_alarm.set_alarm(test_alarm.now(), 10.into());
-        // run_until_disarmed(&test_alarm);
-        // // To check the count, we'd need access to test_alarm.client.count().
-        // // proof { assert(test_alarm.client.count() == 1); } // This requires client to be public or have getter.
-
-        // The provided test code is for illustration and may not pass without further refinement
-        // of both the main code and the test logic.
-        // For the purpose of adding requires/ensures, I will assume the functions are called as is.
-        /*
-        let local_alarm = FakeAlarm::new();
-        let local_client_counter_for_assertion = ClientCounter::new(); // This client is not used by local_alarm
-
-        let mut mux = MuxAlarm::new(&local_alarm);
-        // The following call to mux.set_alarm does not arm local_alarm based on current MuxAlarm::set_alarm impl.
-        mux.set_alarm(local_alarm.now(), Ticks32::from(10));
-        run_until_disarmed(&local_alarm); // local_alarm is likely not armed by the above.
-
-        let fired_count = local_client_counter_for_assertion.count(); // This will be 0.
-        proof{
-            // This assertion will likely fail with current code structure as `fired_count` is 0.
-            // To make it 1, `local_client_counter_for_assertion.alarm()` must be called.
-            assert(fired_count == 1);
-            assert(fired_count == 0); // Based on current logic.
-        }
-        */
     }
     { // TODO: five alarms will fire
 
