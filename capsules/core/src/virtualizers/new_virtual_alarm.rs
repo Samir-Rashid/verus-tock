@@ -56,8 +56,6 @@ pub tracked struct VirtualMuxAlarmPerms<'a> {
     pub tracked dt_reference_perm: PointsTo<TickDtReference<Ticks32>>,
     pub tracked armed_perm: PointsTo<bool>,
     pub tracked next_perm: PointsTo<Option<&'a VirtualMuxAlarm<'a>>>,
-    // As I expected, this line doesn't make sense ownership-wise
-    // pub tracked client_state: &'a ClientCounterState,
 }
 
 impl<'a> ListNodeV<'a, VirtualMuxAlarm<'a>> for VirtualMuxAlarm<'a> {
@@ -142,7 +140,7 @@ impl<'a> VirtualMuxAlarm<'a> {
 
     /// Call this method immediately after new() to link this to the mux, otherwise alarms won't
     /// fire
-    pub fn setup(&'a self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms<'a>>, Tracked(_mux_perms): Tracked<&mut MuxAlarmPerms<'a>>)
+    pub fn setup(&'a self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms<'a>>, Tracked(mux_perms): Tracked<&mut MuxAlarmPerms<'a>>)
         requires
             self.wf(perms),
             // self.mux.virtual_alarms.unwrap().well_formed_list(&Tracked(self.mux.state@.virtual_alarms.unwrap())), // If adding to list
@@ -356,7 +354,7 @@ impl<'a> VirtualMuxAlarm<'a> {
         dt_reference.reference_plus_dt().wrapping_add(extension)
     }
 
-    fn minimum_dt(&self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms>, Tracked(_mux_perms): Tracked<&mut MuxAlarmPerms>) -> (result: Ticks32)
+    fn minimum_dt(&self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms>, Tracked(mux_perms): Tracked<&mut MuxAlarmPerms>) -> (result: Ticks32)
         requires
             self.mux.mux_alarm_wf(perms.mux_perm),
         ensures
@@ -397,7 +395,7 @@ pub struct MuxAlarm<'a> {
 // Keep track of the single, real, physical alarm.
 // #[verifier::reject_recursive_types(A)]
 pub tracked struct MuxAlarmPerms<'a> {
-    pub tracked virtual_alarm_states_seq: Ghost<Seq<VirtualMuxAlarmPerms<'a>>>,
+    pub tracked virtual_alarm_states_seq: Tracked<Seq<VirtualMuxAlarmPerms<'a>>>,
     pub tracked virtual_alarms_state: Option<Tracked<GhostState<'a, VirtualMuxAlarm<'a>>>>,
     pub tracked enabled_perm: PointsTo<usize>,
     // pub alarm: &'a mut FakeAlarmPerms,
@@ -449,7 +447,7 @@ impl<'a> MuxAlarm<'a> {
         let (firing, Tracked(firing_perm)) = PCell::new(false);
         let (next_tick_vals, Tracked(next_tick_vals_perm)) = PCell::new(None);
         let (virtual_alarms, Tracked(virtual_alarms_perm)) = ListV::new();
-        let seq = Ghost(Seq::empty());
+        let seq = Tracked(Seq::tracked_empty());
 
         let mux_alarm = MuxAlarm {
             virtual_alarms: Some(virtual_alarms),
@@ -521,7 +519,7 @@ impl<'a> MuxAlarm<'a> {
 // impl<'a> AlarmClient for MuxAlarm<'a> {
     /// When the underlying alarm has fired, we have to multiplex this event back to the virtual
     /// alarms that should now fire.
-    #[verifier::external_body] // TODO: ignore this for now
+    // #[verifier::external_body] // TODO: ignore this for now
     #[verifier::exec_allows_no_decreases_clause]
     fn alarm(&'a self, Tracked(perms): Tracked<&mut MuxAlarmPerms>)
         requires
@@ -543,15 +541,15 @@ impl<'a> MuxAlarm<'a> {
             self.virtual_alarms.as_ref().unwrap(),
         &Tracked(perms.virtual_alarms_state.tracked_unwrap().get()));
 
-        let tracked index : int = 0;
+        let tracked index : int = 0int;
         // for cur in self.virtual_alarms.iter() {
         // while let Some(cur) = current {
         loop {
             match iterator.next(&Tracked(perms.virtual_alarms_state.tracked_unwrap().get())) {
                 Some(cur) => {
-                    let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().index(index);
+                    let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().tracked_borrow(index);
 
-                    let dt_ref = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
+                    let dt_ref: &TickDtReference<Ticks32> = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
                     let now = self.alarm.now(Tracked(&mut *perms.alarm));
                     if *cur.armed.borrow(Tracked(&virtual_perms.armed_perm)) && !now.within_range(
                         dt_ref.reference,
