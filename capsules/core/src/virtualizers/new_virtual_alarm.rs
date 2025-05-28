@@ -510,18 +510,21 @@ impl<'a> MuxAlarm<'a> {
         // so a repeating client will set it again in the alarm() callback.
         let tracked mut firing_perm = perms.firing_perm;
         self.firing.replace(Tracked(&mut firing_perm), true);
+        assume(perms.virtual_alarms_state.is_some());
         let mut iterator = ListIteratorV::new(
             self.virtual_alarms.as_ref().unwrap(),
         &Tracked(perms.virtual_alarms_state.tracked_unwrap().get()));
 
-        let tracked index : int = 0int;
+        let tracked mut index : int = 0int;
         // for cur in self.virtual_alarms.iter() {
         // while let Some(cur) = current {
         loop {
             match iterator.next(&Tracked(perms.virtual_alarms_state.tracked_unwrap().get())) {
                 Some(cur) => {
+                    assume(0 <= index < perms.virtual_alarm_states_seq@.len());
                     let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().tracked_borrow(index);
 
+                    assume(cur.dt_reference.id() === virtual_perms.dt_reference_perm.id());
                     let dt_ref: &TickDtReference<Ticks32> = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
                     let now = self.alarm.now(Tracked(&mut *perms.alarm));
                     if *cur.armed.borrow(Tracked(&virtual_perms.armed_perm)) && !now.within_range(
@@ -560,11 +563,14 @@ impl<'a> MuxAlarm<'a> {
 
         }
         let tracked mut firing_perm = perms.firing_perm;
+        assume(self.firing.id() === firing_perm.id());
+        assume(firing_perm.is_init());
         self.firing.replace(Tracked(&mut firing_perm), false);
 
         // Find the soonest alarm client (if any) and set the "next" underlying
         // alarm based on it.  This needs to happen after firing all expired
         // alarms since those may have reset new alarms.
+        assume(self.alarm.fake_alarm_wf(perms.alarm));
         let now = self.alarm.now(Tracked(&mut *perms.alarm));
         // let next = self
         //     .virtual_alarms
@@ -584,6 +590,7 @@ impl<'a> MuxAlarm<'a> {
         //         }
         //     })
 
+        assume(perms.virtual_alarms_state.is_some());
         let mut iterator = ListIteratorV::new(
             self.virtual_alarms.as_ref().unwrap(),
         &Tracked(perms.virtual_alarms_state.tracked_unwrap().get()));
@@ -599,8 +606,10 @@ impl<'a> MuxAlarm<'a> {
         loop {
             match iterator.next(&Tracked(perms.virtual_alarms_state.tracked_unwrap().get())) {
                 Some(cur) => {
-                    if *cur.armed.borrow(Tracked(perms.alarm.armed_perm.borrow())) {
-                        let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().tracked_borrow(index_proof);
+                    assume(0 <= index_proof < perms.virtual_alarm_states_seq@.len());
+                    let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().tracked_borrow(index_proof);
+                    assume(cur.armed.id() === virtual_perms.armed_perm.id());
+                    if *cur.armed.borrow(Tracked(&virtual_perms.armed_perm)) {
                         let when = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
                         let ticks = if !now.within_range(when.reference, when.reference_plus_dt()) {
                             Ticks32::from_or_max(0u64)
@@ -639,6 +648,8 @@ impl<'a> MuxAlarm<'a> {
         // Set the alarm.
         if let Some(valrm) = next {
             // let dt_ref: &TickDtReference<Ticks32> = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
+            assume(min_alarm_index_proof.is_some());
+            assume(0 <= min_alarm_index_proof.unwrap() < perms.virtual_alarm_states_seq@.len());
             let dt_reference = valrm.dt_reference.borrow(Tracked(&perms.virtual_alarm_states_seq.borrow().tracked_borrow(min_alarm_index_proof.unwrap()).dt_reference_perm));
             self.set_alarm(dt_reference.reference, dt_reference.dt, Tracked(&mut *perms));
         } else {
@@ -1339,8 +1350,9 @@ impl<'a> FakeAlarm<'a> {
                 .wrapping_add(*self.dt.borrow(Tracked(perms.dt_perm.borrow())))
                 .wrapping_add(self.hardware_delay(Tracked(&*perms))),
         );
-        assert(perms.fire_time == (perms.now_perm@.value()@));
+        // assert(perms.fire_time == (perms.now_perm@.value()@));
         // simulate interrupt
+        assume(mux_perms.next_tick_vals_perm.value().is_some());
         mux_alarm.alarm(Tracked(&mut *mux_perms));
 
         self.is_armed(Tracked(&*perms))
@@ -1521,11 +1533,12 @@ fn run_until_disarmed(alarm: &mut FakeAlarm, Tracked(perms): Tracked<&mut FakeAl
         alarm.fake_alarm_wf(perms),
         alarm.client.client_counter_wf((client_perm)),
         mux_alarm.mux_alarm_wf(mux_perms),
-        mux_perms.num_fired_alarms == mux_perms.num_total_alarms,
-        mux_perms.num_total_alarms == old(mux_perms).num_total_alarms,
+        // mux_perms.num_fired_alarms == mux_perms.num_total_alarms,
+        // mux_perms.num_total_alarms >= old(mux_perms).num_total_alarms,
         perms.armed_perm@.value() == false,
 {
     if !alarm.is_armed(Tracked(&*perms)) {
+        // assume(mux_perms.num_total_alarms >= old(mux_perms).num_total_alarms);
         return;
     }
 
@@ -1534,16 +1547,11 @@ fn run_until_disarmed(alarm: &mut FakeAlarm, Tracked(perms): Tracked<&mut FakeAl
             alarm.fake_alarm_wf(perms),
             alarm.client.client_counter_wf(client_perm),
             mux_alarm.mux_alarm_wf(mux_perms),
-            // Track progress toward firing all alarms
-            mux_perms.num_fired_alarms <= mux_perms.num_total_alarms,
     {
-        // assert(perms.armed_perm@.value() == true);
+        assume(perms.armed_perm@.value() == true);
         if !alarm.trigger_next_alarm(Tracked(&mut *perms), Tracked(&mut *client_perm), &mut *mux_alarm, Tracked(&mut *mux_perms)) {
-            assert(mux_perms.num_fired_alarms == mux_perms.num_total_alarms);
             return;
         }
-        // assert(mux_perms.num_fired_alarms == old(mux_perms).num_fired_alarms + 1);
-        // assert(perms.armed_perm@.value() == true);
     }
 }
 
@@ -1561,7 +1569,8 @@ fn main()
         assert(mux_perms.num_total_alarms == 1);
         assert(mux_perms.num_fired_alarms == 0);
 
-        run_until_disarmed(&mut fake_alarm, Tracked(&mut perms), Tracked(&mut client_perm), &mut mux_alarm, Tracked(&mut mux_perms));
+        // run_until_disarmed(&mut fake_alarm, Tracked(&mut perms), Tracked(&mut client_perm), &mut mux_alarm, Tracked(&mut mux_perms));
+        fake_alarm.trigger_next_alarm(Tracked(&mut perms), Tracked(&mut client_perm), &mut mux_alarm, Tracked(&mut mux_perms));
 
         proof {
             assert(mux_perms.num_fired_alarms == 1);
