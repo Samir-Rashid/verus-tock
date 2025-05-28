@@ -610,18 +610,24 @@ impl<'a> MuxAlarm<'a> {
         //             when.reference_plus_dt().wrapping_sub(now)
         //         }
         //     })
+
         let mut iterator = ListIteratorV::new(
             self.virtual_alarms.as_ref().unwrap(),
-        &perms.virtual_alarms_state.tracked_unwrap());
+        &Tracked(perms.virtual_alarms_state.tracked_unwrap().get()));
+        // let mut iterator = ListIteratorV::new(
+        //     self.virtual_alarms.as_ref().unwrap(),
+        // &perms.virtual_alarms_state.tracked_unwrap());
         let mut min_ticks = None;
         let mut min_alarm = None;
         let mut min_alarm_index = None;
-        let tracked index : int = 0;
+        let tracked mut min_alarm_index_proof = None;
+        let tracked mut index_proof: int = 0int;
+        let mut index= 0;
         loop {
             match iterator.next(&Tracked(perms.virtual_alarms_state.tracked_unwrap().get())) {
                 Some(cur) => {
                     if *cur.armed.borrow(Tracked(perms.alarm.armed_perm.borrow())) {
-                        let tracked virtual_perms = perms.virtual_alarm_states_seq@.index(index);
+                        let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().tracked_borrow(index_proof);
                         let when = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
                         let ticks = if !now.within_range(when.reference, when.reference_plus_dt()) {
                             Ticks32::from_or_max(0u64)
@@ -639,12 +645,16 @@ impl<'a> MuxAlarm<'a> {
                                 min_ticks = Some(ticks);
                                 min_alarm = Some(cur);
                                 min_alarm_index = Some(index);
+                                proof {
+                                    min_alarm_index_proof = Some(index_proof);
+                                }
                             },
                             _ => {},
                         }
                     }
+                    index = index + 1;
                     proof {
-                        index = index + 1 as int;
+                        index_proof = index_proof + 1 as int;
                     }
                 },
                 None => break ,
@@ -655,7 +665,8 @@ impl<'a> MuxAlarm<'a> {
 
         // Set the alarm.
         if let Some(valrm) = next {
-            let dt_reference = valrm.dt_reference.borrow(Tracked(&perms.virtual_alarm_states_seq@.index(min_alarm_index.unwrap()).dt_reference_perm));
+            // let dt_ref: &TickDtReference<Ticks32> = cur.dt_reference.borrow(Tracked(&virtual_perms.dt_reference_perm));
+            let dt_reference = valrm.dt_reference.borrow(Tracked(&perms.virtual_alarm_states_seq.borrow().tracked_borrow(min_alarm_index_proof.unwrap()).dt_reference_perm));
             self.set_alarm(dt_reference.reference, dt_reference.dt, Tracked(&mut *perms));
         } else {
             self.disarm(Tracked(&mut *perms));
