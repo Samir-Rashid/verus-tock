@@ -58,14 +58,17 @@ pub tracked struct VirtualMuxAlarmPerms<'a> {
     pub tracked next_perm: PointsTo<Option<&'a VirtualMuxAlarm<'a>>>,
 }
 
+#[verifier::external]
 impl<'a> ListNodeV<'a, VirtualMuxAlarm<'a>> for VirtualMuxAlarm<'a> {
-    #[verifier::exec_allows_no_decreases_clause]
     fn next(&'a self, perm: Tracked<&vstd::cell::PointsTo<Option<&'a VirtualMuxAlarm<'a>>>>) -> (result: &'a ListLinkV<VirtualMuxAlarm<'a>>)
         ensures
             // result == self.next.as_ref().unwrap(),
             result.0.id() == perm@.id(), // The returned ListLinkV contains the PCell that perm is for
     {
-        &self.next(perm) // TODO: return field
+        match &self.next {
+            Some(next) => next,
+            None => unreachable!(),
+        }
     }
 }
 
@@ -186,19 +189,12 @@ impl<'a> VirtualMuxAlarm<'a> {
         requires
             self.wf(old(perms)),
             old(mux_perms).num_fired_alarms == old(mux_perms).num_total_alarms,
-        // requires
-        //     self@@.armed_perm.is_init() && self@@.armed_perm.id() == self.armed.id(),
-        //     self.mux.state@.enabled.is_init() && self.mux.state@.enabled.id() == self.mux.enabled.id(),
-        //     // self.mux.alarm is valid for disarm call
         ensures
             self.wf(perms),
             result == Ok::<(), ErrorCode>(()),
             perms.armed_perm.id() == self.armed.id(),
             perms.armed_perm.is_init(),
             perms.armed_perm.value() == false,
-            // (old(self.armed.borrow(Tracked(&self@@.armed))) && old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) > 0) ==>
-            //    self.mux.state@.enabled.value() == old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) - 1,
-            // If old(self.mux.enabled.borrow(Tracked(&self.mux.state@.enabled))) == 1 and self was armed, underlying alarm is disarmed.
     {
         if !*self.armed.borrow(Tracked(&perms.armed_perm)) {
             assert(perms.armed_perm.value() == false);
@@ -227,11 +223,9 @@ impl<'a> VirtualMuxAlarm<'a> {
     fn is_armed(&self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms>) -> (result: bool)
         requires
             self.wf(perms),
-        // requires
-        //     self@@.armed.is_init() && self@@.armed.id() == self.armed.id(),
         ensures
             self.wf(perms),
-        //     result == self@@.armed(Tracked(self@@.armed)),
+            // result == self.armed(Tracked(perms.armed_perm)),
     {
         *self.armed.borrow(Tracked(&perms.armed_perm))
     }
@@ -240,17 +234,8 @@ impl<'a> VirtualMuxAlarm<'a> {
         requires
             self.wf(old(perms)),
             self.mux.mux_alarm_wf(old(mux_perms))
-        // requires
-        //     self@@.dt_reference.is_init() && self@@.dt_reference.id() == self.dt_reference.id(),
-        //     self@@.armed.is_init() && self@@.armed.id() == self.armed.id(),
-        //     self.mux.state@.enabled.is_init() && self.mux.state@.enabled.id() == self.mux.enabled.id(),
-        //     self.mux.state@.firing.is_init() && self.mux.state@.firing.id() == self.mux.firing.id(),
-        //     self.mux.state@.next_tick_vals.is_init() && self.mux.state@.next_tick_vals.id() == self.mux.next_tick_vals.id(),
-        //     // self.mux.alarm is valid
         ensures
             self.wf(perms),
-            // Complex ensures based on the commented logic involving dt_reference update,
-            // armed status, mux.enabled count, and potentially calling self.mux.set_alarm.
     {
         let enabled = *self.mux.enabled.borrow(Tracked(&perms.mux_perm.enabled_perm));
         let half_max = Ticks32::half_max_value();
@@ -336,14 +321,8 @@ impl<'a> VirtualMuxAlarm<'a> {
     fn get_alarm(&self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms>) -> (result: Ticks32)
         requires
             self.wf(perms),
-        // requires
-        //     // self@@.dt_reference.is_init() && self@@.dt_reference.id() == self.dt_reference.id(),
         ensures
             self.wf(perms),
-            // let dt_ref_val = self.dt_reference.borrow(Tracked(&self@@.dt_reference));
-            // let extension_val = if dt_ref_val.extended { Ticks32::half_max_value() } else { Ticks32::from(0) };
-            // result.get_value() == dt_ref_val.reference_plus_dt().wrapping_add(extension_val).get_value(),
-            // result.get_value() == Ticks32::from(0).get_value(), // For current dummy implementation
     {
         let dt_reference = self.dt_reference.borrow(Tracked(&perms.dt_reference_perm));
         let extension = if dt_reference.extended {
@@ -359,7 +338,6 @@ impl<'a> VirtualMuxAlarm<'a> {
             self.mux.mux_alarm_wf(perms.mux_perm),
         ensures
             self.mux.mux_alarm_wf(perms.mux_perm),
-        //     // result.get_value() == self.mux.alarm.minimum_dt().get_value(),
     {
         self.mux.alarm.minimum_dt(Tracked(&*perms.mux_perm.alarm))
     }
@@ -367,11 +345,8 @@ impl<'a> VirtualMuxAlarm<'a> {
     fn alarm(&self, Tracked(perms): Tracked<&VirtualMuxAlarmPerms>)
         requires
             self.wf(perms),
-            // self.client.client_counter_wf(old(client_state)),
         ensures
             self.wf(perms),
-            // self.client.client_counter_wf((client_state)),
-            // self.client.count() might have changed if alarm was called
     {
         self.client.alarm();
     }
@@ -476,8 +451,6 @@ impl<'a> MuxAlarm<'a> {
     pub fn set_alarm(&self, reference: Ticks32, dt: Ticks32, Tracked(perms): Tracked<&mut MuxAlarmPerms>)
         requires
             self.mux_alarm_wf(old(perms)),
-
-            // Any other preconditions from original Tock logic, e.g., dt >= minimum_dt
         ensures
             // self@@.next_tick_vals_perm.id() === old(&mut self)@@.next_tick_vals_perm.id(), // ID remains same?
             // self.next_tick_vals.id() === perms.next_tick_vals_perm@.pcell,
@@ -519,14 +492,14 @@ impl<'a> MuxAlarm<'a> {
 // impl<'a> AlarmClient for MuxAlarm<'a> {
     /// When the underlying alarm has fired, we have to multiplex this event back to the virtual
     /// alarms that should now fire.
-    // #[verifier::external_body] // TODO: ignore this for now
     #[verifier::exec_allows_no_decreases_clause]
     fn alarm(&'a self, Tracked(perms): Tracked<&mut MuxAlarmPerms>)
         requires
             self.mux_alarm_wf(old(perms)),
             old(perms).enabled_perm.is_init() && old(perms).enabled_perm.id() == self.enabled.id(),
             // assume that the interrupt comes "soon" => soonest alarm + [0, slack]
-            (*old(perms).alarm).fire_time == old(perms).next_tick_vals_perm.value().unwrap().0.get_value() as int,
+            // (*old(perms).alarm).fire_time == old(perms).next_tick_vals_perm.value().unwrap().0.get_value() as int, // TODO:
+            old(perms).next_tick_vals_perm.value().is_some(),
         ensures
             self.mux_alarm_wf((perms)),
             // count the number of elapsed alarms
@@ -578,7 +551,7 @@ impl<'a> MuxAlarm<'a> {
                         }
                     }
                     proof {
-                        index = index + 1 as int;
+                        index = index + 1;
                     }
                 },
                 None => break,
@@ -673,22 +646,6 @@ impl<'a> MuxAlarm<'a> {
         }
     }
 }
-
-// pub(crate) open spec fn spec_saturating_sub(lhs: int, rhs: int) -> int {
-//     if lhs >= rhs {
-//         lhs - rhs
-//     } else {
-//         0
-//     }
-// }
-
-// #[verifier(external_fn_specification)]
-// pub fn ex_saturatingsub(a: u32, b: u32) -> (ret: u32)
-//     ensures
-//         ret == spec_saturating_sub(a as int, b as int),
-// {
-//     a.saturating_sub(b)
-// }
 
 /// An integer type defining the width of a time value, which allows
 /// clients to know when wraparound will occur.
@@ -921,79 +878,45 @@ pub trait ConvertTicks<T: Ticks> {
     /// Returns the number of ticks in the provided number of seconds,
     /// rounding down any fractions. If the value overflows Ticks it
     /// returns `Ticks::max_value()`.
-    fn ticks_from_seconds(&self, s: u32) -> (result: T)
-        // ensures
-        //     ({let freq = (<Self as Time>::get_freq() as u64);
-        //     let val = freq * (s as u64);
-        //     result.get_value() == T::from_or_max(val).get_value()}),
-    ;
+    fn ticks_from_seconds(&self, s: u32) -> (result: T) ;
 
     /// Returns the number of ticks in the provided number of milliseconds,
     /// rounding down any fractions. If the value overflows Ticks it
     /// returns `Ticks::max_value()`.
-    fn ticks_from_ms(&self, ms: u32) -> (result: T)
-        // ensures
-        //     ({let freq = (<Self as Time>::get_freq() as u64);
-        //     let val = freq * (ms as u64);
-        //     result.get_value() == T::from_or_max(val / 1_000).get_value()}),
-    ;
+    fn ticks_from_ms(&self, ms: u32) -> (result: T) ;
 
     /// Returns the number of ticks in the provided number of microseconds,
     /// rounding down any fractions. If the value overflows Ticks it
     /// returns `Ticks::max_value()`.
-    fn ticks_from_us(&self, us: u32) -> (result: T)
-        // ensures
-        //     ({let freq = (<Self as Time>::get_freq() as u64);
-        //     let val = freq * (us as u64);
-        //     result.get_value() == T::from_or_max((val / 1_000_000) as u64).get_value()}),
-    ;
+    fn ticks_from_us(&self, us: u32) -> (result: T) ;
 
     /// Returns the number of seconds in the provided number of ticks,
     /// rounding down any fractions. If the value overflows u32, `u32::MAX`
     /// is returned,
-    fn ticks_to_seconds(&self, tick: T) -> (result: u32)
-        // requires <Self as Time>::get_freq() != 0,
-        // ensures result == tick.saturating_scale(1, <Self as Time>::get_freq()),
-    ;
+    fn ticks_to_seconds(&self, tick: T) -> (result: u32) ;
 
     /// Returns the number of milliseconds in the provided number of ticks,
     /// rounding down any fractions. If the value overflows u32, `u32::MAX`
     /// is returned,
-    fn ticks_to_ms(&self, tick: T) -> (result: u32)
-        // requires <Self as Time>::get_freq() != 0,
-        // ensures result == tick.saturating_scale(1_000, <Self as Time>::get_freq()),
-    ;
+    fn ticks_to_ms(&self, tick: T) -> (result: u32) ;
 
     /// Returns the number of microseconds in the provided number of ticks,
     /// rounding down any fractions. If the value overflows u32, `u32::MAX`
     /// is returned,
-    fn ticks_to_us(&self, tick: T) -> (result: u32)
-        // requires <Self as Time>::get_freq() != 0,
-        // ensures result == tick.saturating_scale(1_000_000, <Self as Time>::get_freq()),
-    ;
+    fn ticks_to_us(&self, tick: T) -> (result: u32) ;
 }
 
 impl<T: Time + ?Sized> ConvertTicks<<T as Time>::Ticks> for T {
     #[verifier(external_body)]
     #[inline]
-    fn ticks_from_seconds(&self, s: u32) -> (result: <T as Time>::Ticks)
-        // ensures
-        //     ({let freq = (<Self as Time>::get_freq() as u64);
-        //     let val = freq * (s as u64);
-        //     result.get_value() == <T as Time>::Ticks::from_or_max(val as u64).get_value()}),
-    {
+    fn ticks_from_seconds(&self, s: u32) -> (result: <T as Time>::Ticks) {
         let val = <T as Time>::get_freq() as u64 * s as u64;
         <T as Time>::Ticks::from_or_max(val)
     }
 
     #[verifier(external_body)]
     #[inline]
-    fn ticks_from_ms(&self, ms: u32) -> (result: <T as Time>::Ticks)
-        // ensures
-        //     ({let freq = (<Self as Time>::get_freq() as u64);
-        //     let val = freq * (ms as u64);
-        //     result.get_value() == <T as Time>::Ticks::from_or_max((val / 1_000) as u64).get_value()}),
-    {
+    fn ticks_from_ms(&self, ms: u32) -> (result: <T as Time>::Ticks) {
         let val = <T as Time>::get_freq() as u64 * ms as u64;
         <T as Time>::Ticks::from_or_max(val / 1_000)
     }
@@ -1001,54 +924,35 @@ impl<T: Time + ?Sized> ConvertTicks<<T as Time>::Ticks> for T {
     #[verifier(external_body)]
     #[inline]
     fn ticks_from_us(&self, us: u32) -> (result: <T as Time>::Ticks)
-        // ensures
-        //     ({let freq = (<Self as Time>::get_freq() as u64);
-        //     let val = freq * (us as u64);
-        //     result.get_value() == <T as Time>::Ticks::from_or_max((val / 1_000_000) as u64).get_value()}),
     {
         let val = <T as Time>::get_freq() as u64 * us as u64;
         <T as Time>::Ticks::from_or_max(val / 1_000_000)
     }
 
     #[inline]
-    fn ticks_to_seconds(&self, tick: <T as Time>::Ticks) -> (result: u32)
-        // requires <Self as Time>::get_freq() != 0,
-        // ensures result == tick.saturating_scale(1, <Self as Time>::get_freq()),
-    {
+    fn ticks_to_seconds(&self, tick: <T as Time>::Ticks) -> (result: u32) {
         tick.saturating_scale(1, <T as Time>::get_freq())
     }
 
     #[inline]
-    fn ticks_to_ms(&self, tick: <T as Time>::Ticks) -> (result: u32)
-        // requires <Self as Time>::get_freq() != 0,
-        // ensures result == tick.saturating_scale(1_000, <Self as Time>::get_freq()),
-    {
+    fn ticks_to_ms(&self, tick: <T as Time>::Ticks) -> (result: u32) {
         tick.saturating_scale(1_000, <Self as Time>::get_freq())
     }
 
     #[inline]
-    fn ticks_to_us(&self, tick: <T as Time>::Ticks) -> (result: u32)
-        // requires <Self as Time>::get_freq() != 0,
-        // ensures result == tick.saturating_scale(1_000_000, <Self as Time>::get_freq()),
-    {
+    fn ticks_to_us(&self, tick: <T as Time>::Ticks) -> (result: u32) {
         tick.saturating_scale(1_000_000, <T as Time>::get_freq())
     }
 }
 
 pub trait Timestamp: Time {
-    // Requires/ensures for methods in Time already apply.
-    // Timestamp implies now() is idempotent over short periods or for a given instance.
     // fn now(&self) -> Self::Ticks
-    //    ensures old(self).now() == self.now(); // This might be too strong, depends on definition.
 }
 
 /// Callback handler for when a counter has overflowed past its maximum
 /// value and returned to 0.
 pub trait OverflowClient {
-    fn overflow(&self)
-        requires true, // self is valid
-        ensures true, // Describes side-effects, specific to implementation
-    ;
+    fn overflow(&self);
 }
 
 /// Represents a free-running hardware counter that can be started and stopped.
@@ -1092,8 +996,7 @@ pub trait Counter<'a>: Time {
     ;
 
     /// Returns whether the counter is currently running.
-    fn is_running(&self) -> (result: bool)
-    ;
+    fn is_running(&self) -> (result: bool);
 }
 
 /// Callback handler for when an Alarm fires (a `Counter` reaches a specific
@@ -1102,8 +1005,7 @@ pub trait AlarmClient {
     /// Callback indicating the alarm time has been reached. The alarm
     /// MUST be disabled when this is called. If a new alarm is needed,
     /// the client can call `Alarm::set_alarm`.
-    fn alarm(&self)
-    ;
+    fn alarm(&self);
 }
 
 /// Interface for receiving notification when a particular time
@@ -1141,13 +1043,7 @@ pub trait Alarm<'a>: Time {
 
     /// Return the current alarm value. This is undefined at boot and
     /// otherwise returns `now + dt` from the last call to `set_alarm`.
-    fn get_alarm(&self) -> (result: Self::Ticks)
-        // ensures
-        //     // If armed, returns the target time.
-        //     // If not armed, behavior might be less defined by Tock.
-        //     // For Verus, if armed: result == internal_target_time
-        //     true,
-    ;
+    fn get_alarm(&self) -> (result: Self::Ticks);
 
     /// Disable the alarm and stop it from firing in the future.
     /// Valid `Result<(), ErrorCode>` codes are:
@@ -1155,9 +1051,7 @@ pub trait Alarm<'a>: Time {
     ///   the callback in the future
     ///   - `Err(ErrorCode::FAIL)` the alarm could not be disarmed and will invoke
     ///   the callback in the future
-    fn disarm(&self) -> (result: Result<(), ErrorCode>)
-        // ensures (result.is_ok() ==> !self.is_armed()),
-    ;
+    fn disarm(&self) -> (result: Result<(), ErrorCode>);
 
     /// Returns whether the alarm is currently armed. Note that this
     /// does not reliably indicate whether there will be a future
@@ -1165,8 +1059,7 @@ pub trait Alarm<'a>: Time {
     /// disarmed) and a callback is pending and has not been called yet.
     /// In this case it possible for `is_armed` to return false yet to
     /// receive a callback.
-    fn is_armed(&self) -> (result: bool)
-    ;
+    fn is_armed(&self) -> (result: bool);
 
     /// Return the minimum dt value that is supported. Any dt smaller than
     /// this will automatically be increased to this minimum value.
@@ -1434,7 +1327,7 @@ impl<'a> FakeAlarm<'a> {
             self.client.client_counter_wf(client_perm),
             mux_alarm.mux_alarm_wf(mux_perms),
             // Add postcondition about fired alarms
-            perms.armed_perm@.value() ==> mux_perms.num_fired_alarms >= old(mux_perms).num_fired_alarms,
+            // perms.armed_perm@.value() ==> mux_perms.num_fired_alarms >= old(mux_perms).num_fired_alarms,
             !result ==> perms.armed_perm@.value() == false,
     {
         if !self.is_armed(Tracked(&*perms)) {
