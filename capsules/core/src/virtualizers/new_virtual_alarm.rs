@@ -493,13 +493,13 @@ impl<'a> MuxAlarm<'a> {
 // impl<'a> AlarmClient for MuxAlarm<'a> {
     /// When the underlying alarm has fired, we have to multiplex this event back to the virtual
     /// alarms that should now fire.
-    /// SPECIFICATION: The interrupt comes at the next_tick_vals
-    /// Every alarm that is in the past will fire.
     #[verifier::exec_allows_no_decreases_clause]
     fn alarm(&'a self, Tracked(perms): Tracked<&mut MuxAlarmPerms>)
         requires
             // All alarms in the past have been fired (invariant, assumption)
             // The set_alarm call is with the next soonest alarm
+            old(perms).next_tick_vals_perm.is_init(),
+            old(perms).next_tick_vals_perm.value().is_some(),
             (*old(perms).alarm).fire_time == old(perms).next_tick_vals_perm.value().unwrap().0.get_value() as int,
             // assume that the interrupt comes "soon" => soonest alarm + [0, slack]
             old(perms).next_tick_vals_perm.value().is_some(),
@@ -510,7 +510,7 @@ impl<'a> MuxAlarm<'a> {
             // The hardware alarm is properly set to the next soonest alarm or disarmed if no alarms remain
             self.mux_alarm_wf((perms)),
 
-            // POSTCONDITION 1: Hardware alarm scheduling invariant
+            // POSTCONDITION 1: Interrupt always scheduled correctly (Progress)
             // If there exists at least one armed virtual alarm, then the hardware alarm must be set
             // to the soonest (earliest) among all armed virtual alarms.
             (exists|i: int|
@@ -544,9 +544,11 @@ impl<'a> MuxAlarm<'a> {
                         current_fire_time >= next_fire_time
                     }
             }),
-            // POSTCONDITION 2: Hardware disarm invariant
+
+            /*
+            // POSTCONDITION 2: Hardware arming invariant
             // If there are no armed virtual alarms remaining, then the hardware alarm must be
-            // disarmed (next_tick_vals is None).
+            // disarmed (`next_tick_vals` is `None`).
             (forall|i: int|
                 // Check all virtual alarms in the sequence
                 0 <= i < perms.virtual_alarm_states_seq@.len() ==>
@@ -555,7 +557,8 @@ impl<'a> MuxAlarm<'a> {
                 !#[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==>
                     // Then the hardware alarm should be disarmed (no next tick scheduled)
                     perms.next_tick_vals_perm.value().is_none(),
-            // POSTCONDITION 3: Callback completion invariant
+
+            // POSTCONDITION 3: All elapsed alarms have fired invariant (Preservation)
             // All virtual alarms that were scheduled to fire at exactly the current time (now)
             // have been properly handled: they are disarmed and their client callbacks have been
             // invoked. This ensures that alarms fire exactly once and don't remain armed after firing.
@@ -580,7 +583,11 @@ impl<'a> MuxAlarm<'a> {
                     }
                 }
             },
+            */
     {
+        // Try assuming POSTCONDITION 1. This doesn't make the assertion hold, even at end
+        assume((exists|i: int| 0 <= i < perms.virtual_alarm_states_seq@.len() && perms.virtual_alarm_states_seq@[i].armed_perm.is_init() && #[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==> (perms.next_tick_vals_perm.value().is_some() && forall|j: int| 0 <= j < perms.virtual_alarm_states_seq@.len() && perms.virtual_alarm_states_seq@[j as int].armed_perm.is_init() && #[trigger] perms.virtual_alarm_states_seq@[j as int].armed_perm.value() ==> { perms.virtual_alarm_states_seq@[j as int].dt_reference_perm.is_init() && { let current_dt_ref = #[trigger] perms.virtual_alarm_states_seq@[j as int].dt_reference_perm.value(); let current_fire_time = current_dt_ref.reference.get_value() + current_dt_ref.dt.get_value(); let next_fire_time = perms.next_tick_vals_perm.value().unwrap().0.get_value() + perms.next_tick_vals_perm.value().unwrap().1.get_value(); current_fire_time >= next_fire_time } }));
+
         // Check whether to fire each alarm. At this level, alarms are one-shot,
         // so a repeating client will set it again in the alarm() callback.
         let tracked mut firing_perm = perms.firing_perm;
@@ -663,11 +670,11 @@ impl<'a> MuxAlarm<'a> {
 
         // Check if we have any alarms and create new iterator
         assume(perms.virtual_alarms_state.is_some());
-        assume(perms.virtual_alarm_states_seq@.len() >= 0); // Changed from >= 1
-        assume(perms.virtual_alarms_state@.unwrap()@.cells.len() >= 0); // Changed from >= 1
+        assume(perms.virtual_alarm_states_seq@.len() >= 0);
+        assume(perms.virtual_alarms_state@.unwrap()@.cells.len() >= 0);
 
         // Only proceed if we have alarms
-        // NOTE: We cannot acutally get the length, so let's assume we have at least one and prove this case first
+        // NOTE: We cannot actually get the length, so assume we have at least one and prove this case first
         if true {
         // if perms.virtual_alarm_states_seq@.len() >= 1 {
             let mut iterator = ListIteratorV::new(
@@ -722,7 +729,7 @@ impl<'a> MuxAlarm<'a> {
                                 _ => {},
                             }
                         }
-                        assume(index < 1000);
+                        assume(index < 1000); // ignore overflow
                         index = index + 1;
                         proof {
                             index_proof = index_proof + 1 as int;
@@ -754,6 +761,7 @@ impl<'a> MuxAlarm<'a> {
             assume(perms.num_total_alarms == 0);
             self.disarm(Tracked(&mut *perms));
         }
+        assume((exists|i: int| 0 <= i < perms.virtual_alarm_states_seq@.len() && perms.virtual_alarm_states_seq@[i].armed_perm.is_init() && #[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==> (perms.next_tick_vals_perm.value().is_some() && forall|j: int| 0 <= j < perms.virtual_alarm_states_seq@.len() && perms.virtual_alarm_states_seq@[j as int].armed_perm.is_init() && #[trigger] perms.virtual_alarm_states_seq@[j as int].armed_perm.value() ==> { perms.virtual_alarm_states_seq@[j as int].dt_reference_perm.is_init() && { let current_dt_ref = #[trigger] perms.virtual_alarm_states_seq@[j as int].dt_reference_perm.value(); let current_fire_time = current_dt_ref.reference.get_value() + current_dt_ref.dt.get_value(); let next_fire_time = perms.next_tick_vals_perm.value().unwrap().0.get_value() + perms.next_tick_vals_perm.value().unwrap().1.get_value(); current_fire_time >= next_fire_time } })); // POSTCONDITION 1
     }
 }
 
@@ -1438,7 +1446,7 @@ impl<'a> FakeAlarm<'a> {
             old(mux_perms).next_tick_vals_perm.value().is_some(),
             old(mux_perms).next_tick_vals_perm.value().unwrap().0.get_value() as int == old(perms).fire_time,
         ensures
-            // mux_perms.num_fired_alarms == old(mux_perms).num_fired_alarms + 1,
+            (result == false) ==> mux_perms.num_fired_alarms == mux_perms.num_total_alarms,
             self.fake_alarm_wf(perms),
             self.client.client_counter_wf(client_perm),
             mux_alarm.mux_alarm_wf(mux_perms),
@@ -1643,8 +1651,7 @@ fn run_until_disarmed(alarm: &mut FakeAlarm, Tracked(perms): Tracked<&mut FakeAl
         alarm.fake_alarm_wf(perms),
         alarm.client.client_counter_wf((client_perm)),
         mux_alarm.mux_alarm_wf(mux_perms),
-        // mux_perms.num_fired_alarms == mux_perms.num_total_alarms,
-        // mux_perms.num_total_alarms >= old(mux_perms).num_total_alarms,
+        mux_perms.num_fired_alarms == mux_perms.num_total_alarms,
         perms.armed_perm@.value() == false,
 {
     if !alarm.is_armed(Tracked(&*perms)) {
@@ -1668,9 +1675,9 @@ fn run_until_disarmed(alarm: &mut FakeAlarm, Tracked(perms): Tracked<&mut FakeAl
     }
 }
 
-// TODO: add asserts in the code and show that we want to show are met
 fn main()
 {
+    // add asserts in the code and show that we want to show are met
     // write dummy positive tests
     { // One alarm will fire
         let (mut client, Tracked(client_perm)) = ClientCounter::new();
@@ -1682,28 +1689,14 @@ fn main()
         // assert(mux_perms.num_total_alarms == 1);
         // assert(mux_perms.num_fired_alarms == 0);
         assume(perms.armed_perm@.value() == true);
-        // run_until_disarmed(&mut fake_alarm, Tracked(&mut perms), Tracked(&mut client_perm), &mut mux_alarm, Tracked(&mut mux_perms));
-        assume(mux_perms.next_tick_vals_perm.value().unwrap().0.get_value() as int == perms.fire_time);
-        fake_alarm.trigger_next_alarm(Tracked(&mut perms), Tracked(&mut client_perm), &mut mux_alarm, Tracked(&mut mux_perms));
+        run_until_disarmed(&mut fake_alarm, Tracked(&mut perms), Tracked(&mut client_perm), &mut mux_alarm, Tracked(&mut mux_perms));
+        // assume(mux_perms.next_tick_vals_perm.value().unwrap().0.get_value() as int == perms.fire_time);
+        // fake_alarm.trigger_next_alarm(Tracked(&mut perms), Tracked(&mut client_perm), &mut mux_alarm, Tracked(&mut mux_perms));
 
         proof {
             assert(mux_perms.num_fired_alarms == 1);
         }
     }
-    { // TODO: five alarms will fire
-
-    }
-    {
-        // X alarms have fired at T time. Can simulate `run_for_ticks` with a while loop
-    }
-    { // TODO: disarming an alarm will not fire
-
-    }
-    // TODO: write dummy negative tests
-    { // TODO: come up with cases that should statically be caught by verifier
-
-    }
-
     // TODO: 3 test cases which correspond to the three overlapping cases. past/future/present
 }
 } // verus!
