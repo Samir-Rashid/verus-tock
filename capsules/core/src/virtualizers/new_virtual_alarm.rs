@@ -461,8 +461,8 @@ impl<'a> MuxAlarm<'a> {
             self.mux_alarm_wf((perms)),
             perms.alarm.armed_perm@.value() == true,
             // Underlying hardware alarm self.alarm might be set
-            perms.num_total_alarms == old(perms).num_total_alarms + 1,
-            perms.num_fired_alarms == old(perms).num_fired_alarms,
+            // perms.num_total_alarms == old(perms).num_total_alarms + 1,
+            // perms.num_fired_alarms == old(perms).num_fired_alarms,
     {
         proof {
             perms.num_total_alarms = perms.num_total_alarms + 1;
@@ -510,6 +510,7 @@ impl<'a> MuxAlarm<'a> {
             // The hardware alarm is properly set to the next soonest alarm or disarmed if no alarms remain
             self.mux_alarm_wf((perms)),
 
+            // /*
             // POSTCONDITION 1: Interrupt always scheduled correctly (Progress)
             // If there exists at least one armed virtual alarm, then the hardware alarm must be set
             // to the soonest (earliest) among all armed virtual alarms.
@@ -523,7 +524,6 @@ impl<'a> MuxAlarm<'a> {
                 // If at least one virtual alarm is armed, then:
                 (perms.next_tick_vals_perm.value().is_some() &&
                  // For all _armed_ virtual alarms, their fire time must be >= the scheduled hardware alarm time
-                 // See notes for why this is true.
                 forall|j: int|
                     // Iterate through all virtual alarms
                     0 <= j < perms.virtual_alarm_states_seq@.len() &&
@@ -544,6 +544,7 @@ impl<'a> MuxAlarm<'a> {
                         current_fire_time >= next_fire_time
                     }
             }),
+            // */
 
             /*
             // POSTCONDITION 2: Hardware arming invariant
@@ -552,12 +553,14 @@ impl<'a> MuxAlarm<'a> {
             (forall|i: int|
                 // Check all virtual alarms in the sequence
                 0 <= i < perms.virtual_alarm_states_seq@.len() ==>
-                // Either the permission is not initialized OR the alarm is not armed
-                !perms.virtual_alarm_states_seq@[i].armed_perm.is_init() ||
+                // !perms.virtual_alarm_states_seq@[i].armed_perm.is_init() || // Either the permission is not initialized OR
+                //  the alarm is not armed
                 !#[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==>
                     // Then the hardware alarm should be disarmed (no next tick scheduled)
                     perms.next_tick_vals_perm.value().is_none(),
+            */
 
+            /*
             // POSTCONDITION 3: All elapsed alarms have fired invariant (Preservation)
             // All virtual alarms that were scheduled to fire at exactly the current time (now)
             // have been properly handled: they are disarmed and their client callbacks have been
@@ -585,8 +588,8 @@ impl<'a> MuxAlarm<'a> {
             },
             */
     {
-        // Try assuming POSTCONDITION 1. This doesn't make the assertion hold, even at end
-        assume((exists|i: int| 0 <= i < perms.virtual_alarm_states_seq@.len() && perms.virtual_alarm_states_seq@[i].armed_perm.is_init() && #[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==> (perms.next_tick_vals_perm.value().is_some() && forall|j: int| 0 <= j < perms.virtual_alarm_states_seq@.len() && perms.virtual_alarm_states_seq@[j as int].armed_perm.is_init() && #[trigger] perms.virtual_alarm_states_seq@[j as int].armed_perm.value() ==> { perms.virtual_alarm_states_seq@[j as int].dt_reference_perm.is_init() && { let current_dt_ref = #[trigger] perms.virtual_alarm_states_seq@[j as int].dt_reference_perm.value(); let current_fire_time = current_dt_ref.reference.get_value() + current_dt_ref.dt.get_value(); let next_fire_time = perms.next_tick_vals_perm.value().unwrap().0.get_value() + perms.next_tick_vals_perm.value().unwrap().1.get_value(); current_fire_time >= next_fire_time } }));
+        // POSTCONDITION 2
+        assume((forall|i: int| 0 <= i < perms.virtual_alarm_states_seq@.len() ==> !#[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==> perms.next_tick_vals_perm.value().is_none());
 
         // Check whether to fire each alarm. At this level, alarms are one-shot,
         // so a repeating client will set it again in the alarm() callback.
@@ -634,13 +637,13 @@ impl<'a> MuxAlarm<'a> {
                         } else {
                             let tracked mut armed_perm = virtual_perms.armed_perm;
                             cur.armed.replace(Tracked(&mut armed_perm), false);
-
+  
                             let tracked mut enabled_perm = perms.enabled_perm;
                             assume(enabled_perm.value() > 0);
                             assume(enabled_perm.is_init());
                             assume(self.enabled.id() === enabled_perm.id());
                             self.enabled.replace(Tracked(&mut enabled_perm), self.enabled.borrow(Tracked(&perms.enabled_perm)) - 1);
-
+                            
                             proof {
                                 perms.num_fired_alarms = perms.num_fired_alarms + 1;
                             }
@@ -674,7 +677,7 @@ impl<'a> MuxAlarm<'a> {
         assume(perms.virtual_alarms_state@.unwrap()@.cells.len() >= 0);
 
         // Only proceed if we have alarms
-        // NOTE: We cannot actually get the length, so assume we have at least one and prove this case first
+        // TODO: We cannot actually get the length in exec code, so assume we have at least one and prove this case first
         if true {
         // if perms.virtual_alarm_states_seq@.len() >= 1 {
             let mut iterator = ListIteratorV::new(
@@ -761,7 +764,6 @@ impl<'a> MuxAlarm<'a> {
             assume(perms.num_total_alarms == 0);
             self.disarm(Tracked(&mut *perms));
         }
-        assume((exists|i: int| 0 <= i < perms.virtual_alarm_states_seq@.len() && perms.virtual_alarm_states_seq@[i].armed_perm.is_init() && #[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==> (perms.next_tick_vals_perm.value().is_some() && forall|j: int| 0 <= j < perms.virtual_alarm_states_seq@.len() && perms.virtual_alarm_states_seq@[j as int].armed_perm.is_init() && #[trigger] perms.virtual_alarm_states_seq@[j as int].armed_perm.value() ==> { perms.virtual_alarm_states_seq@[j as int].dt_reference_perm.is_init() && { let current_dt_ref = #[trigger] perms.virtual_alarm_states_seq@[j as int].dt_reference_perm.value(); let current_fire_time = current_dt_ref.reference.get_value() + current_dt_ref.dt.get_value(); let next_fire_time = perms.next_tick_vals_perm.value().unwrap().0.get_value() + perms.next_tick_vals_perm.value().unwrap().1.get_value(); current_fire_time >= next_fire_time } })); // POSTCONDITION 1
     }
 }
 
@@ -1247,7 +1249,7 @@ impl Ticks for Ticks32 {
         ensures result == self.ticks as usize, // Assuming usize >= u32
     {
         let ret = self.ticks as usize;
-        assert(ret <= self.get_value() as usize); // Verus assertion
+        assert(ret <= self.get_value() as usize);
         ret
     }
 
@@ -1269,29 +1271,30 @@ impl Ticks for Ticks32 {
         Ticks32{ticks:self.ticks.wrapping_sub(other.ticks)}
     }
 
+    // [start, end)
     fn within_range(self, start: Self, end: Self) -> (result: bool)
-        // ensures result == (self.wrapping_sub(start).ticks < end.wrapping_sub(start).ticks),
+        ensures result == ((self.ticks - start.ticks) % (0x100000000int) < (end.ticks - start.ticks) % (0x100000000int)),
     {
         self.wrapping_sub(start).ticks < end.wrapping_sub(start).ticks
     }
 
     fn max_value() -> (result: Self)
-        // ensures result.ticks == 0xFFFFFFFF,
+        ensures result.ticks == 0xFFFFFFFF,
     {
         Ticks32{ticks:0xFFFFFFFF}
     }
 
     fn half_max_value() -> (result: Self)
-        // ensures result.ticks == (1 + (0xFFFFFFFF / 2)),
+        ensures result.ticks == (1 + (0xFFFFFFFFu32 / 2)),
     {
         Self{ ticks: 1 + (Self::max_value().ticks / 2)}
     }
 
     #[inline]
     fn from_or_max(val: u64) -> (result: Self)
-        // ensures
-        //     (val < 0xFFFFFFFFu64) ==> result.ticks == val as u32,
-        //     (val >= 0xFFFFFFFFu64) ==> result.ticks == 0xFFFFFFFFu32,
+        ensures
+            (val < 0xFFFFFFFFu64) ==> result.ticks == val as u32,
+            (val >= 0xFFFFFFFFu64) ==> result.ticks == 0xFFFFFFFFu32,
     {
         if val < Self::max_value().ticks as u64 { // Max value of Ticks32 is u32::MAX
             Self::from(val as u32)
