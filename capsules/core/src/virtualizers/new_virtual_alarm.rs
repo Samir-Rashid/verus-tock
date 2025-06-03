@@ -510,10 +510,15 @@ impl<'a> MuxAlarm<'a> {
             // The hardware alarm is properly set to the next soonest alarm or disarmed if no alarms remain
             self.mux_alarm_wf((perms)),
 
-            // /*
+            /*
             // POSTCONDITION 1: Interrupt always scheduled correctly (Progress)
             // If there exists at least one armed virtual alarm, then the hardware alarm must be set
             // to the soonest (earliest) among all armed virtual alarms.
+            //
+            // 1. There exists a virtual alarm whose fire time matches the next_tick_vals
+            // 2. next_tick_vals is sooner than or equal to every armed virtual alarm
+
+            // 1. There exists a virtual alarm whose fire time matches the next_tick_vals
             (exists|i: int|
                 // Check all virtual alarms in the sequence
                 0 <= i < perms.virtual_alarm_states_seq@.len() &&
@@ -522,29 +527,34 @@ impl<'a> MuxAlarm<'a> {
                 // and armed/enabled
                 #[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==>
                 // If at least one virtual alarm is armed, then:
-                (perms.next_tick_vals_perm.value().is_some() &&
-                 // For all _armed_ virtual alarms, their fire time must be >= the scheduled hardware alarm time
+                perms.next_tick_vals_perm.value().is_some() &&
+                (exists|k: int|
+                    0 <= k < perms.virtual_alarm_states_seq@.len() &&
+                    perms.virtual_alarm_states_seq@[k].armed_perm.is_init() &&
+                    #[trigger] perms.virtual_alarm_states_seq@[k].armed_perm.value() &&
+                    perms.virtual_alarm_states_seq@[k].dt_reference_perm.is_init() &&
+                    // fire_time[k] = reference[k] + dt[k] = next_tick_vals.reference + next_tick_vals.dt
+                    #[trigger] perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().reference.wrapping_add(#[trigger] perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().dt).get_value() == perms.next_tick_vals_perm.value().unwrap().0.wrapping_add(perms.next_tick_vals_perm.value().unwrap().1).get_value()),
+
+            // 2. next_tick_vals is sooner than or equal to every armed virtual alarm
+            (exists|i: int|
+                // Check all virtual alarms in the sequence
+                0 <= i < perms.virtual_alarm_states_seq@.len() &&
+                // which are initialized
+                perms.virtual_alarm_states_seq@[i].armed_perm.is_init() &&
+                // and armed/enabled
+                #[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==>
+                // If at least one virtual alarm is armed, then:
+                perms.next_tick_vals_perm.value().is_some() &&
                 forall|j: int|
-                    // Iterate through all virtual alarms
                     0 <= j < perms.virtual_alarm_states_seq@.len() &&
-                    // which are initialized
                     perms.virtual_alarm_states_seq@[j].armed_perm.is_init() &&
-                    // and armed/enabled
-                    #[trigger] perms.virtual_alarm_states_seq@[j].armed_perm.value() ==> {
-                    // Ensure the dt_reference permission is initialized
-                    perms.virtual_alarm_states_seq@[j].dt_reference_perm.is_init() &&
-                    {
-                        // Get timing info for this virtual alarm
-                        let current_dt_ref = #[trigger] perms.virtual_alarm_states_seq@[j].dt_reference_perm.value();
-                        // Calculate when this virtual alarm should fire (reference + duration)
-                        let current_fire_time = current_dt_ref.reference.get_value() + current_dt_ref.dt.get_value();
-                        // Calculate when the hardware alarm is scheduled to fire
-                        let next_fire_time = perms.next_tick_vals_perm.value().unwrap().0.get_value() + perms.next_tick_vals_perm.value().unwrap().1.get_value();
-                        // Ensure this virtual alarm fires at or after the hardware alarm time
-                        current_fire_time >= next_fire_time
-                    }
-            }),
-            // */
+                    #[trigger] perms.virtual_alarm_states_seq@[j].armed_perm.value() ==>
+                        perms.virtual_alarm_states_seq@[j].dt_reference_perm.is_init() &&
+                        // difference between next_tick_vals and old(next_tick_vals) is <= difference between fire_time[j] and old(next_tick_vals) using modulo 2^32
+                        // which is equivalent to checking that there is no sooner possible alarm to set
+                        perms.next_tick_vals_perm.value().unwrap().0.wrapping_sub(old(perms).next_tick_vals_perm.value().unwrap().0).get_value() <= perms.virtual_alarm_states_seq@[j].dt_reference_perm.value().reference.wrapping_add(perms.virtual_alarm_states_seq@[j].dt_reference_perm.value().dt).wrapping_sub(old(perms).next_tick_vals_perm.value().unwrap().0).get_value(),
+            */
 
             /*
             // POSTCONDITION 2: Hardware arming invariant
@@ -637,13 +647,13 @@ impl<'a> MuxAlarm<'a> {
                         } else {
                             let tracked mut armed_perm = virtual_perms.armed_perm;
                             cur.armed.replace(Tracked(&mut armed_perm), false);
-  
+
                             let tracked mut enabled_perm = perms.enabled_perm;
                             assume(enabled_perm.value() > 0);
                             assume(enabled_perm.is_init());
                             assume(self.enabled.id() === enabled_perm.id());
                             self.enabled.replace(Tracked(&mut enabled_perm), self.enabled.borrow(Tracked(&perms.enabled_perm)) - 1);
-                            
+
                             proof {
                                 perms.num_fired_alarms = perms.num_fired_alarms + 1;
                             }
