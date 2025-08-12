@@ -510,7 +510,6 @@ impl<'a> MuxAlarm<'a> {
             // The hardware alarm is properly set to the next soonest alarm or disarmed if no alarms remain
             self.mux_alarm_wf((perms)),
 
-            /*
             // POSTCONDITION 1: Interrupt always scheduled correctly (Progress)
             // If there exists at least one armed virtual alarm, then the hardware alarm must be set
             // to the soonest (earliest) among all armed virtual alarms.
@@ -554,9 +553,7 @@ impl<'a> MuxAlarm<'a> {
                         // difference between next_tick_vals and old(next_tick_vals) is <= difference between fire_time[j] and old(next_tick_vals) using modulo 2^32
                         // which is equivalent to checking that there is no sooner possible alarm to set
                         perms.next_tick_vals_perm.value().unwrap().0.wrapping_sub(old(perms).next_tick_vals_perm.value().unwrap().0).get_value() <= perms.virtual_alarm_states_seq@[j].dt_reference_perm.value().reference.wrapping_add(perms.virtual_alarm_states_seq@[j].dt_reference_perm.value().dt).wrapping_sub(old(perms).next_tick_vals_perm.value().unwrap().0).get_value(),
-            */
 
-            /*
             // POSTCONDITION 2: Hardware arming invariant
             // If there are no armed virtual alarms remaining, then the hardware alarm must be
             // disarmed (`next_tick_vals` is `None`).
@@ -568,9 +565,7 @@ impl<'a> MuxAlarm<'a> {
                 !#[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==>
                     // Then the hardware alarm should be disarmed (no next tick scheduled)
                     perms.next_tick_vals_perm.value().is_none(),
-            */
 
-            /*
             // POSTCONDITION 3: All elapsed alarms have fired invariant (Preservation)
             // All virtual alarms that were scheduled to fire at exactly the current time (now)
             // have been properly handled: they are disarmed and their client callbacks have been
@@ -596,7 +591,6 @@ impl<'a> MuxAlarm<'a> {
                     }
                 }
             },
-            */
     {
         // POSTCONDITION 2
         assume((forall|i: int| 0 <= i < perms.virtual_alarm_states_seq@.len() ==> !#[trigger] perms.virtual_alarm_states_seq@[i].armed_perm.value()) ==> perms.next_tick_vals_perm.value().is_none());
