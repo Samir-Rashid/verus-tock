@@ -194,11 +194,17 @@ pub trait Ticks: Copy + From<u32> + fmt::Debug + Ord + PartialOrd + Eq {
 
     /// Add two values, wrapping around on overflow using standard
     /// unsigned arithmetic.
-    fn wrapping_add(self, other: Self) -> Self;
+    spec fn wrapping_add(self, other: Self) -> (result: Self)
+        ensures
+            result.get_value() == (self.get_value() + other.get_value()) % (1int << Self::spec_width()),
+    ;
 
     /// Subtract two values, wrapping around on underflow using standard
-    /// unsigned arithmetic.
-    fn wrapping_sub(self, other: Self) -> Self;
+    /// unsigned arithmetic.  
+    spec fn wrapping_sub(self, other: Self) -> (result: Self)
+        ensures
+            result.get_value() == (self.get_value() - other.get_value()) % (1int << Self::spec_width()),
+    ;
 
     /// Returns whether the value is in the range of [`start, `end`) using
     /// unsigned arithmetic and considering wraparound. It returns `true`
@@ -637,11 +643,11 @@ impl Ticks for Ticks32 {
         self.0
     }
 
-    fn wrapping_add(self, other: Self) -> Self {
+    spec fn wrapping_add(self, other: Self) -> Self {
         Ticks32(self.0.wrapping_add(other.0))
     }
 
-    fn wrapping_sub(self, other: Self) -> Self {
+    spec fn wrapping_sub(self, other: Self) -> Self {
         Ticks32(self.0.wrapping_sub(other.0))
     }
 
@@ -741,11 +747,11 @@ impl Ticks for Ticks24 {
         self.0
     }
 
-    fn wrapping_add(self, other: Self) -> Self {
+    spec fn wrapping_add(self, other: Self) -> Self {
         Ticks24(self.0.wrapping_add(other.0) & Self::get_mask())
     }
 
-    fn wrapping_sub(self, other: Self) -> Self {
+    spec fn wrapping_sub(self, other: Self) -> Self {
         Ticks24(self.0.wrapping_sub(other.0) & Self::get_mask())
     }
 
@@ -854,11 +860,11 @@ impl Ticks for Ticks16 {
         self.0 as u32
     }
 
-    fn wrapping_add(self, other: Self) -> Self {
+    spec fn wrapping_add(self, other: Self) -> Self {
         Ticks16(self.0.wrapping_add(other.0))
     }
 
-    fn wrapping_sub(self, other: Self) -> Self {
+    spec fn wrapping_sub(self, other: Self) -> Self {
         Ticks16(self.0.wrapping_sub(other.0))
     }
 
@@ -964,11 +970,11 @@ impl Ticks for Ticks64 {
         self.0 as u32
     }
 
-    fn wrapping_add(self, other: Self) -> Self {
+    spec fn wrapping_add(self, other: Self) -> Self {
         Ticks64(self.0.wrapping_add(other.0))
     }
 
-    fn wrapping_sub(self, other: Self) -> Self {
+    spec fn wrapping_sub(self, other: Self) -> Self {
         Ticks64(self.0.wrapping_sub(other.0))
     }
 
