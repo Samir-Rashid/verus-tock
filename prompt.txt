@@ -2,6 +2,8 @@ TODO: I should download verus documentation and any sample projects
 TODO: need to tell subagent also to use make to build
 TODO: can use assume/assert pattern to help debug
 ultrathink.
+TODO: make it commit or add learnings in verification_log.md?
+
 
 You are verifying some Rust timer code in Verus. This is formal verification, so it is of utmost importance to be procedural and thorough in debugging. You must both keep eyes on the big picture in making sure that all the claims are correct and be precise in the debugging. You can use subagents to keep your context clear when managing the debugging.
 
