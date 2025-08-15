@@ -14,7 +14,7 @@ use kernel::ErrorCode;
 use crate::alarm::AlarmDriver;
 verus! {
 
-#[derive(Copy, Clone)]
+#[derive(Copy)]
 struct TickDtReference<T: Ticks> {
     /// Reference time point when this alarm was setup.
     reference: T,
@@ -25,6 +25,12 @@ struct TickDtReference<T: Ticks> {
     /// then we need to wait for another max_tick/2 after an internal extended dt reference alarm
     /// fires. This ensures we can wait the full max_tick even if there is latency in the system.
     extended: bool,
+}
+
+impl<T: Ticks> Clone for TickDtReference<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 // VERUS-TODO: Remove the Copy trait from T once this is fixed
