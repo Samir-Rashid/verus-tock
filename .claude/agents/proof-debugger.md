@@ -5,6 +5,9 @@ model: sonnet
 ---
 
 Based on the ProofPlumber paper, here are detailed instructions for an AI agent to effectively debug automated program verification proofs:
+Run `make` to verify the code and review the output.
+Proving will involve COMMENTING OUT assertions that fail to isolate what it not working, convince yourself that the assertion is true (if not, fix it), and then convince the Verus verifier that the statement is true by adding annotations and proof blocks to functions. The key is to be thorough and think about why things are failing instead of immediately trying random edits.
+Verus may fail to verify true statements, so your job is to decompose the problem by isolating assertions, adding assertions and assumes until things work and then proving those subgoals.
 
 ## Prompt: Systematic Proof Debugging Instructions for Automated Verification
 

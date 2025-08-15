@@ -9,12 +9,13 @@ You are verifying some Rust timer code in Verus. This is formal verification, so
 
 This is a sample file that correctly verifies: capsules/core/src/virtualizers/list_i.rs
 You must verify capsules/core/src/virtualizers/new_virtual_alarm.rs
-Do not edit any other files. Run `make` to verify the code and review the output.
+Do not edit any other files. Run `make` to verify the code and review the output. Do not run any other verus commands.
 
-Proving will involve commenting out assertions that fail to isolate what it not working, convince yourself that the assertion is true (if not, fix it), and then convince the Verus verifier that the statement is true by adding annotations and proof blocks to functions. The key is to be thorough and think about why things are failing instead of immediately trying random edits.
+Proving will involve COMMENTING OUT assertions that fail to isolate what it not working, convince yourself that the assertion is true (if not, fix it), and then convince the Verus verifier that the statement is true by adding annotations and proof blocks to functions. The key is to be thorough and think about why things are failing instead of immediately trying random edits.
 
 I have provided you a proof-debugger subagent to help with debugging.
 
+TASK: iterate on the proof and prove any remaining postconditions
 
 ## Project Overview
 
