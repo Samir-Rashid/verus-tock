@@ -15,7 +15,7 @@ Proving will involve COMMENTING OUT assertions that fail to isolate what it not 
 
 I have provided you a proof-debugger subagent to help with debugging.
 
-TASK: iterate on the proof and prove any remaining postconditions
+TASK: iterate on the proof. work to propogate invariants, assertions, and properties as needed in order to whittle away the assume statements. Work to make the proof sound. If you see places with redundant comments about the proof, remove them or make them concise.
 
 ## Project Overview
 
