@@ -799,7 +799,7 @@ impl<'a> MuxAlarm<'a> {
     {
         // POSTCONDITION 2 proof will be established by the algorithm
         
-        // DEBUG: Test sequence length at function start
+        // DEBUG: Test sequence length at function start - baseline check
         proof {
             assert(old(perms).virtual_alarm_states_seq@.len() == perms.virtual_alarm_states_seq@.len()); // Should work at function start
         }
@@ -808,37 +808,102 @@ impl<'a> MuxAlarm<'a> {
         // so a repeating client will set it again in the alarm() callback.
         let tracked mut firing_perm = perms.firing_perm;
         self.firing.replace(Tracked(&mut firing_perm), true);
+        
+        // EXPERIMENTAL DEBUG: Track sequence length at every step
+        proof {
+            // STEP 1: After firing.replace, before any resource extraction - should still work
+            assert(old(perms).virtual_alarm_states_seq@.len() == perms.virtual_alarm_states_seq@.len()); // Should work
+        }
+        
         assert(perms.virtual_alarms_state.is_some());
+        
+        proof {
+            // STEP 2: After virtual_alarms_state.is_some() assertion - should still work
+            assert(old(perms).virtual_alarm_states_seq@.len() == perms.virtual_alarm_states_seq@.len()); // Should work
+        }
+        
+        // RESEARCH-BASED SOLUTION: Capture proof relationships BEFORE any modifications
+        let ghost original_seq_len = perms.virtual_alarm_states_seq@.len();
+        let ghost original_old_len = old(perms).virtual_alarm_states_seq@.len();
+        
+        proof {
+            // Establish baseline relationship BEFORE any structural changes
+            assert(original_seq_len == original_old_len);
+            assert(original_seq_len == old(perms).virtual_alarm_states_seq@.len());
+        }
+        
+        let tracked ghost_state = perms.virtual_alarms_state.tracked_unwrap().get();
+        let exec_ghost_ref = Tracked(ghost_state);
+        
+        proof {
+            // STEP 5: After creating exec_ghost_ref wrapper - test with captured values
+            assert(original_old_len == perms.virtual_alarm_states_seq@.len()); // Test if this breaks
+        }
+        
+        // Create iterator with exec-accessible resource
         let mut iterator = ListIteratorV::new(
             self.virtual_alarms.as_ref().unwrap(),
-        &Tracked(perms.virtual_alarms_state.tracked_unwrap().get()));
-        // assert(iterator.valid_list_iterator(...)); // Commented due to tracked_unwrap() consumption
+        &exec_ghost_ref);
+        
+        proof {
+            // STEP 6: After iterator creation - test with captured values
+            assert(original_old_len == perms.virtual_alarm_states_seq@.len()); // Test if this breaks
+        }
+        
+        proof {
+            // RESEARCH-BASED FIX: Use captured values instead of old(perms) after modifications
+            
+            // Step 1: Verify baseline captured values are consistent
+            assert(original_seq_len == perms.virtual_alarm_states_seq@.len()); 
+            assert(original_old_len == original_seq_len);
+            
+            // Step 2: Reconstruct the field
+            perms.virtual_alarms_state = Some(exec_ghost_ref);
+            
+            // Step 3: Test sequence length preservation using captured values
+            assert(original_seq_len == perms.virtual_alarm_states_seq@.len()); // Should work
+            
+            // Step 4: Establish the key relationship for later assertions
+            // Instead of old(perms).virtual_alarm_states_seq@.len() == perms.virtual_alarm_states_seq@.len()
+            // Use original_old_len == perms.virtual_alarm_states_seq@.len() 
+            assert(original_old_len == perms.virtual_alarm_states_seq@.len());
+        }
 
         let tracked mut index : int = 0int;
-        let ghost original_seq_len = perms.virtual_alarm_states_seq@.len();
         // for cur in self.virtual_alarms.iter() {
         // while let Some(cur) = current {
+        // FIX: Use reconstructed field in invariant instead of extracted resource
         loop 
             invariant
                 self.mux_alarm_wf(perms),
-                0 <= index <= original_seq_len,
-                perms.virtual_alarm_states_seq@.len() == original_seq_len,
-                iterator.valid_list_iterator(&(perms.virtual_alarms_state.view().unwrap())),
+                0 <= index <= original_old_len,
+                perms.virtual_alarm_states_seq@.len() == original_old_len,
+                iterator.valid_list_iterator(&exec_ghost_ref), // Use extracted resource consistently
                 index == iterator.index@,
         {
             assert(perms.virtual_alarms_state.is_some());
-            // assert(iterator.valid_list_iterator(...)); // Commented due to tracked_unwrap() consumption
-            match iterator.next(&Tracked(perms.virtual_alarms_state.tracked_unwrap().get())) {
+            assert(iterator.valid_list_iterator(&exec_ghost_ref)); // Use extracted resource consistently
+            match iterator.next(&exec_ghost_ref) {
                 Some(cur) => {
-                    assert(0 <= index <= original_seq_len);
-                    assert(perms.virtual_alarm_states_seq@.len() == original_seq_len);
-                    assert(0 <= index <= perms.virtual_alarm_states_seq@.len());
-                    // assert(iterator.valid_list_iterator(...)); // Commented due to tracked_unwrap() consumption
+                    // CRITICAL: iterator.next() returns the element at the OLD index, but increments iterator.index
+                    // So 'cur' corresponds to the sequence element at the OLD index (which is 'index' pre-increment)
+                    // The current iterator.index@ is now 'index + 1' after the increment
                     
+                    assert(0 <= index < original_old_len); // OLD index should be valid for sequence access
+                    assert(perms.virtual_alarm_states_seq@.len() == original_old_len);
                     assert(index < perms.virtual_alarm_states_seq@.len());
-                    assert(0 <= index < perms.virtual_alarm_states_seq@.len());
+                    
+                    // DEBUG: Test sequence length before tracked_borrow
+                    proof {
+                        assert(original_old_len == perms.virtual_alarm_states_seq@.len());
+                    }
                     
                     let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().tracked_borrow(index);
+
+                    // DEBUG: Test sequence length after tracked_borrow  
+                    proof {
+                        assert(original_old_len == perms.virtual_alarm_states_seq@.len());
+                    }
 
                     assert(perms.virtual_alarms_state@.unwrap()@.points_to_map.dom().contains(index as nat));
                     assert(perms.virtual_alarms_state@.unwrap()@.points_to_map[index as nat].value().is_some());
@@ -945,7 +1010,7 @@ impl<'a> MuxAlarm<'a> {
             
             let mut iterator = ListIteratorV::new(
                 self.virtual_alarms.as_ref().unwrap(),
-            &Tracked(perms.virtual_alarms_state.tracked_unwrap().get()));
+            &exec_ghost_ref);
 
             let mut min_ticks: Option<Ticks32> = None;
             let mut min_alarm: Option<&VirtualMuxAlarm> = None;
@@ -958,7 +1023,7 @@ impl<'a> MuxAlarm<'a> {
                 invariant
                     self.mux_alarm_wf(perms),
                     perms.virtual_alarms_state.is_some(),
-                    iterator.valid_list_iterator(&(perms.virtual_alarms_state.view().unwrap())),
+                    iterator.valid_list_iterator(&exec_ghost_ref),
                     
                     perms.virtual_alarms_state@.unwrap()@.cells.len() == perms.virtual_alarm_states_seq@.len() + 1,
                     0 <= index_proof <= perms.virtual_alarm_states_seq@.len(),
@@ -984,9 +1049,9 @@ impl<'a> MuxAlarm<'a> {
                     
             {
                 assert(perms.virtual_alarms_state.is_some());
-                // assert(iterator.valid_list_iterator(...)); // Commented due to tracked_unwrap() consumption
+                assert(iterator.valid_list_iterator(&exec_ghost_ref));
 
-                match iterator.next(&Tracked(perms.virtual_alarms_state.tracked_unwrap().get())) {
+                match iterator.next(&exec_ghost_ref) {
                     Some(cur) => {
                         assert(0 <= index_proof < perms.virtual_alarm_states_seq@.len());
                         let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().tracked_borrow(index_proof);
@@ -1054,7 +1119,7 @@ impl<'a> MuxAlarm<'a> {
                 let ghost final_min_index = min_alarm_index_proof;
                 
                 // Loop invariant properties are still accessible here
-                // assert(iterator.valid_list_iterator(...)); // Commented due to tracked_unwrap() consumption
+                assert(iterator.valid_list_iterator(&exec_ghost_ref));
                 // Iterator position when loop breaks - we've scanned all elements
                 assert(final_iterator_position <= perms.virtual_alarm_states_seq@.len());
                 
@@ -1206,25 +1271,10 @@ impl<'a> MuxAlarm<'a> {
         }
         
         proof {
-            // ROOT CAUSE IDENTIFIED: tracked_unwrap() resource consumption issue
-            // 
-            // ANALYSIS: The alarm() function calls tracked_unwrap().get() multiple times:
-            // 1. Line 814: perms.virtual_alarms_state.tracked_unwrap().get() - CONSUMES resource
-            // 2. Line 831: another tracked_unwrap().get() call - tries to use consumed resource  
-            // 3. Line 989: another tracked_unwrap().get() call - tries to use consumed resource
-            //
-            // TECHNICAL ISSUE: tracked_unwrap() MOVES the value out of Option<Tracked<T>>, 
-            // consuming the resource. Subsequent attempts to access perms.virtual_alarms_state fail
-            // because it's now None, not Some(Tracked<...>).
-            //
-            // CORRECT SOLUTION: Use proper shared borrowing patterns like:
-            // - Extract once and reuse throughout function
-            // - Use tracked_borrow instead of tracked_unwrap  
-            // - Restructure algorithm to avoid multiple resource access
-            //
-            // TEMPORARY SOLUTION: The sequence length IS preserved by algorithm logic
-            // (algorithm only reads sequences, doesn't modify them), so assume this property:
-            assume(old(perms).virtual_alarm_states_seq@.len() == perms.virtual_alarm_states_seq@.len());
+            // FIXED: Proper tracked resource management implemented using captured values
+            // The sequence length is preserved because the algorithm only reads sequences, never modifies them.
+            // Using captured original_old_len instead of old(perms) after structural modifications:
+            assert(original_old_len == perms.virtual_alarm_states_seq@.len());
         }
         
         proof {
