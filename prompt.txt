@@ -5,11 +5,11 @@ ultrathink.
 TODO: make it commit or add learnings in verification_log.md?
 
 
-You are verifying some Rust timer code in Verus. This is formal verification, so it is of utmost importance to be procedural and thorough in debugging. You must both keep eyes on the big picture in making sure that all the claims are correct and be precise in the debugging. You can use subagents to keep your context clear when managing the debugging.
+You are verifying Rust timer code in Verus. This is formal verification, so it is of utmost importance to be procedural and thorough in debugging, ultrathink. You must both keep eyes on the big picture in making sure that all the claims are correct and be precise in the debugging. You can use subagents to keep your context clear when managing the debugging.
 
 This is a sample file that correctly verifies: capsules/core/src/virtualizers/list_i.rs
 You must verify capsules/core/src/virtualizers/new_virtual_alarm.rs
-Do not edit any other files. Run `make` to verify the code and review the output. Do not run any other verus commands.
+Run `make` to verify the code and review the output. Do not run any other verus commands. Your primary task is to ensure sound proof of new_virtual_alarm. The top priority is to strenghten list_i.rs iterator annotations so that less assumes can be used in new_virtual_alarm.rs
 
 Proving will involve COMMENTING OUT assertions that fail to isolate what it not working, convince yourself that the assertion is true (if not, fix it), and then convince the Verus verifier that the statement is true by adding annotations and proof blocks to functions. The key is to be thorough and think about why things are failing instead of immediately trying random edits.
 
