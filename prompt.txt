@@ -15,7 +15,7 @@ Proving will involve COMMENTING OUT assertions that fail to isolate what it not 
 
 I have provided you a proof-debugger subagent to help with debugging.
 
-TASK: iterate on the proof. work to propogate invariants, assertions, and properties as needed in order to whittle away the assume statements. Work to make the proof sound. If you see places with redundant comments about the proof, remove them or make them concise.
+TASK: iterate on the proof. work to strengthen invariants, assertions, and properties as needed in order to remove the assume statements.
 
 ## Project Overview
 
@@ -234,3 +234,5 @@ After fixing the proof:
 - The goal is to find the minimal additional information needed for the solver to complete the proof
 
 Follow these systematic steps with patience and logical thinking. The debugging process is iterative—each verification attempt provides information that guides the next debugging step.
+
+Work on one item at a time. Use systematic debugging instead of giving up when proofs fail. PROOF FAILURE DOESN'T MEAN FALSE! proof failures indicate Verus needs more help understanding why properties are true. test debug assertions and see what verus understands. try strengthening precondition or postconditions as needed.

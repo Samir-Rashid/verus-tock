@@ -4,7 +4,7 @@ These documentation files can be large and contain overwhelming info. I advise u
 This folder has the Verus official documentation and this file is the index. This is the best resource to search for concepts.
 /home/mod/Documents/github/verus-tock/verus/source/docs/guide/src/SUMMARY.md
 
-Sample verified project, best resource for real code examples. For example, this file will show you how others have overcome annoying verus quirks
+Sample verified project, best resource for real code examples. For example, this file will show you how others have overcome annoying verus quirks. This entire repo is very useful to look through for reference.
 verified-memory-allocator/verus-mimalloc/queues.rs
 
 event-sites/2024-sosp-tutorial/exercises/advanced-rust-topics/solutions/solution_doubly_linked_list.rs
