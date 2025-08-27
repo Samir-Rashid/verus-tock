@@ -197,6 +197,7 @@ impl<'a> VirtualMuxAlarm<'a> {
     fn disarm(&self, Tracked(perms): Tracked<&mut VirtualMuxAlarmPerms>, Tracked(mux_perms): Tracked<&mut MuxAlarmPerms>, Ghost(sequence_index): Ghost<int>) -> (result: Result<(), ErrorCode>)
         requires
             self.wf(old(perms)),
+            self.mux.mux_alarm_wf(old(mux_perms)),
             old(mux_perms).num_fired_alarms == old(mux_perms).num_total_alarms,
             // SEQUENCE INDEX CORRESPONDENCE: This VirtualMuxAlarm corresponds to the given sequence index
             0 <= sequence_index < old(mux_perms).virtual_alarm_states_seq@.len(),
@@ -215,20 +216,29 @@ impl<'a> VirtualMuxAlarm<'a> {
             return Ok(());
         }
 
+        proof {
+            // Establish that the alarm at sequence_index is armed
+            // From preconditions: old states were equal, and we haven't modified anything yet
+            assert(mux_perms.virtual_alarm_states_seq@[sequence_index].armed_perm.value() == perms.armed_perm.value());
+            // We passed the early return check, so this alarm is armed
+            assert(mux_perms.virtual_alarm_states_seq@[sequence_index].armed_perm.value() == true);
+            
+            // Use the system invariant to prove enabled > 0
+            self.mux.prove_enabled_positive_with_armed_alarm(mux_perms, sequence_index);
+        }
+
+        let mut enabled = self.mux.enabled.borrow(Tracked(&mux_perms.enabled_perm));
+        
         self.armed.replace(Tracked(&mut perms.armed_perm), false);
         assert(perms.armed_perm.value() == false);
-
-        let mut enabled = self.mux.enabled.borrow(Tracked(&perms.mux_perm.enabled_perm));
-        
-        assume(*enabled > 0);
         enabled = &(*enabled - 1);
 
         if *enabled > 0 {
-            self.mux.enabled.replace(Tracked(&mut perms.mux_perm.enabled_perm), *enabled);
+            self.mux.enabled.replace(Tracked(&mut mux_perms.enabled_perm), *enabled);
         } else {
             // If there are not more enabled alarms, disable the underlying alarm
             // completely.
-            let _ = self.mux.alarm.disarm(Tracked(&mut *perms.mux_perm.alarm));
+            let _ = self.mux.alarm.disarm(Tracked(&mut *mux_perms.alarm));
         }
         Ok(())
     }
