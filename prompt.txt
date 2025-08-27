@@ -230,7 +230,7 @@ After fixing the proof:
 
 ### Remember
 - Each assertion is a query to the solver: "Can you prove this here?"
-- Verification failure doesn't mean the property is false—it might mean the solver needs help
+- **Verification failure doesn't mean the property is false—it might mean the solver needs help. Strengthen invariant annotations or add asserts to help Verus.**
 - The goal is to find the minimal additional information needed for the solver to complete the proof
 
 Follow these systematic steps with patience and logical thinking. The debugging process is iterative—each verification attempt provides information that guides the next debugging step.
