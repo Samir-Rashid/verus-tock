@@ -11,6 +11,9 @@ This is a sample file that correctly verifies: capsules/core/src/virtualizers/li
 You must verify capsules/core/src/virtualizers/new_virtual_alarm.rs
 Run `make` to verify the code and review the output. Do not run any other verus commands. Your primary task is to ensure sound proof of new_virtual_alarm. The top priority is to strenghten list_i.rs iterator annotations so that less assumes can be used in new_virtual_alarm.rs
 
+There are docs and other sample verification code available in this folder.
+verification_docs/reference_files.md
+
 Proving will involve COMMENTING OUT assertions that fail to isolate what it not working, convince yourself that the assertion is true (if not, fix it), and then convince the Verus verifier that the statement is true by adding annotations and proof blocks to functions. The key is to be thorough and think about why things are failing instead of immediately trying random edits.
 
 I have provided you a proof-debugger subagent to help with debugging.
