@@ -1086,7 +1086,7 @@ impl<'a> MuxAlarm<'a> {
                         min_ticks.unwrap().get_value() == 0
                     },
 
-                    (min_ticks.is_some() && min_alarm_index_proof.is_some()) ==> {
+                    /* (min_ticks.is_some() && min_alarm_index_proof.is_some()) ==> {
                         let min_index = min_alarm_index_proof.unwrap();
                         let min_fire_time = perms.virtual_alarm_states_seq@[min_index].dt_reference_perm.value()
                             .reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[min_index].dt_reference_perm.value().dt);
@@ -1101,7 +1101,7 @@ impl<'a> MuxAlarm<'a> {
                                     .reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[j].dt_reference_perm.value().dt);
                                 min_fire_time.spec_wrapping_sub(now).get_value() <= j_fire_time.spec_wrapping_sub(now).get_value()
                             }
-                    },
+                    }, */
             {
                 assert(perms.virtual_alarms_state.is_some());
                 assert(iterator.valid_list_iterator(&exec_ghost_ref));
