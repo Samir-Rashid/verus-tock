@@ -450,6 +450,12 @@ impl<'a> MuxAlarm<'a> {
                     )
                 )
         ))
+        &&& (perms.virtual_alarm_states_seq@.len() > 0 ==> (
+            forall|i: int| #![auto] 
+                0 <= i < perms.virtual_alarm_states_seq@.len() ==> (
+                    perms.virtual_alarm_states_seq@[i].next_perm.is_init()
+                )
+        ))
         // Design constraint: Extended alarms are disabled in this implementation
         &&& (perms.virtual_alarm_states_seq@.len() > 0 ==> (
             forall|i: int| #![auto] 
@@ -987,7 +993,24 @@ impl<'a> MuxAlarm<'a> {
                             
                             assert(virtual_perms.armed_perm.is_init());
                             assert(virtual_perms.dt_reference_perm.is_init());
-                            assume(virtual_perms.next_perm.is_init());
+                            
+                            // Help Verus derive next_perm.is_init() from strengthened invariant
+                            assert(self.mux_alarm_wf(perms));
+                            assert(0 <= sequence_index < perms.virtual_alarm_states_seq@.len());
+                            assert(*virtual_perms === perms.virtual_alarm_states_seq@[sequence_index]);
+                            // From strengthened invariant: all next_perm in sequence are initialized
+                            assert(perms.virtual_alarm_states_seq@[sequence_index].next_perm.is_init());
+                            // From structural equality: virtual_perms should have same property
+                            assert(virtual_perms.next_perm.is_init());
+                            
+                            // The challenge: mux_alarm_wf has many complex requirements
+                            // Since individual assertions worked, the issue might be very specific
+                            assert(cur.mux === self); // From structural invariant  
+                            assert(self.mux_alarm_wf(perms)); // From precondition
+                            
+                            // Until I can identify the exact missing property, I need the assume
+                            // This represents the architectural requirement that each VirtualMuxAlarmPerms
+                            // in the sequence has a well-formed mux_perm that works with the same MuxAlarm
                             assume(cur.mux.mux_alarm_wf(virtual_perms.mux_perm));
                             
                             assert(cur.wf(&virtual_perms));
@@ -1287,6 +1310,10 @@ impl<'a> MuxAlarm<'a> {
                     assert(min_alarm.is_some());
                     assert(min_alarm_index_proof.is_some());
                     assert(k == min_alarm_index_proof.unwrap());
+                    
+                    // LOOP INVARIANT GAP: The loop finds armed alarms in the linked list,
+                    // but doesn't establish that the corresponding sequence element is armed
+                    // This requires a loop invariant connecting linked list state to sequence state
                     assume(virtual_perms_for_proof.armed_perm.value() == true);
                     
                     assert(perms.virtual_alarm_states_seq@[k].armed_perm.is_init());
@@ -1298,6 +1325,10 @@ impl<'a> MuxAlarm<'a> {
                     assert(k == min_alarm_index_proof.unwrap());
                     assert(perms.next_tick_vals_perm.value().unwrap().0.get_value() == dt_reference.reference.get_value());
                     assert(perms.next_tick_vals_perm.value().unwrap().1.get_value() == dt_reference.dt.get_value());
+                    
+                    // BORROW POSTCONDITION GAP: dt_reference was borrowed using sequence[k] permission,  
+                    // but PCell borrow postcondition (*dt_reference === sequence[k].value()) is not established
+                    // This requires explicit postcondition from the borrow site or stronger borrow lemmas
                     assume(dt_reference.reference.get_value() == perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().reference.get_value());
                     assume(dt_reference.dt.get_value() == perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().dt.get_value());
                     assert(perms.next_tick_vals_perm.value().unwrap().0.get_value() == perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().reference.get_value());
