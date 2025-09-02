@@ -15,17 +15,6 @@ There are docs and other sample verification code available in this folder.
 verification_docs/reference_files.md
 
 Proving will involve COMMENTING OUT assertions that fail to isolate what it not working, convince yourself that the assertion is true (if not, fix it), and then convince the Verus verifier that the statement is true by adding annotations and proof blocks to functions. The key is to be thorough and think about why things are failing instead of immediately trying random edits.
-
-I have provided you a proof-debugger subagent to help with debugging.
-
-TASK: iterate on the proof. work to strengthen invariants, assertions, and properties as needed in order to remove the assume statements.
-
-## Project Overview
-
-This document captures the systematic debugging and verification of Rust timer code using Verus formal verification. The target was to verify `capsules/core/src/virtualizers/new_virtual_alarm.rs`, a complex alarm multiplexer that manages multiple virtual alarms using a single hardware timer.
-
-## Codebase Understanding
-
 ### Architecture
 - **MuxAlarm**: Hardware alarm multiplexer that schedules the earliest of multiple virtual alarms
 - **VirtualMuxAlarm**: Individual virtual alarm instances that clients can set
@@ -86,49 +75,7 @@ This document captures the systematic debugging and verification of Rust timer c
    - Verus benefits from direct construction of proof objects
    - Break complex exists into simpler assertions when possible
 
-### Effective Debugging Patterns
-
-1. **Error Categorization**
-   - Mode errors (spec/exec mismatch)
-   - Assertion failures (logical proof gaps)  
-   - Postcondition failures (specification not satisfied)
-   - Precondition failures (insufficient assumptions)
-
-2. **Progressive Verification**
-   - Always maintain some working baseline
-   - Add complexity incrementally  
-   - Use TODO comments to track temporary assumptions
-   - Test frequently with `make`
-
-3. **Assumption Management**
-   - Mark all assumptions with TODO comments explaining what should be proven
-   - Group related assumptions together
-   - Convert assumptions in dependency order (dependencies first)
-
-### Code Architecture Insights
-
-1. **Timer Code Complexity**
-   - Wrapping arithmetic is everywhere and needs careful specification
-   - Multiple abstraction layers (hardware → mux → virtual alarms)
-   - Complex invariants about timing relationships and alarm ordering
-
-2. **List/Sequence Correspondence**  
-   - Linked list iteration must correspond to sequence indices
-   - Permissions must be properly initialized and maintained
-   - Iterator validity crucial for sound proofs
-
-3. **Alarm Multiplexer Logic**
-   - Core algorithm: find minimum armed alarm, set hardware to that time
-   - Edge cases: no armed alarms → disarm hardware
-   - Correctness: hardware always set to earliest armed alarm or disabled
-
-
-
-
-Read VERIFICATION_LOG.md for more context.
-
 ---
-
 Based on the ProofPlumber paper, here are detailed instructions for an AI agent to effectively debug automated program verification proofs:
 
 ## Prompt: Systematic Proof Debugging Instructions for Automated Verification
@@ -205,7 +152,6 @@ Follow this iterative process:
 After fixing the proof:
 - Remove redundant assertions that were only for debugging
 - Keep only assertions that are essential for verification
-- Document why non-obvious assertions are necessary
 
 ### Critical Principles
 
@@ -216,8 +162,6 @@ After fixing the proof:
 3. **Incremental Progress**: Break complex properties into smaller steps the solver can handle.
 
 4. **Preserve Context**: When copying assertions between contexts, carefully substitute variables and consider scope.
-
-5. **Document Intent**: When keeping debugging assertions, explain why they're necessary for future maintainers.
 
 ### Example Debugging Session Structure
 
