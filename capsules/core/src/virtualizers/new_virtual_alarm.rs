@@ -260,21 +260,20 @@ impl<'a> VirtualMuxAlarm<'a> {
                 dt,
                 extended: false,
             };
-        /* // TODO: I've removed this. Want to show it fails if you account for slack in the system
-        let dt_reference = if dt > half_max.wrapping_add(self.minimum_dt()) {
-            TickDtReference {
-                reference,
-                dt: dt.wrapping_sub(half_max),
-                extended: true,
-            }
-        } else {
-            TickDtReference {
-                reference,
-                dt,
-                extended: false,
-            }
-        };
-        */
+        // TODO: I've removed this. Want to show it fails if you account for slack in the system
+        // let dt_reference = if dt > half_max.wrapping_add(self.minimum_dt()) {
+        //     TickDtReference {
+        //         reference,
+        //         dt: dt.wrapping_sub(half_max),
+        //         extended: true,
+        //     }
+        // } else {
+        //     TickDtReference {
+        //         reference,
+        //         dt,
+        //         extended: false,
+        //     }
+        // };
         let tracked mut dt_ref_perm = perms.dt_reference_perm;
         self.dt_reference.replace(Tracked(&mut dt_ref_perm), dt_reference);
         let dt = dt_reference.dt;
@@ -946,22 +945,22 @@ impl<'a> MuxAlarm<'a> {
                         min_ticks.unwrap().get_value() == 0
                     },
 
-                    /* (min_ticks.is_some() && min_alarm_index_proof.is_some()) ==> {
-                        let min_index = min_alarm_index_proof.unwrap();
-                        let min_fire_time = perms.virtual_alarm_states_seq@[min_index].dt_reference_perm.value()
-                            .reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[min_index].dt_reference_perm.value().dt);
+                    // (min_ticks.is_some() && min_alarm_index_proof.is_some()) ==> {
+                    //     let min_index = min_alarm_index_proof.unwrap();
+                    //     let min_fire_time = perms.virtual_alarm_states_seq@[min_index].dt_reference_perm.value()
+                    //         .reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[min_index].dt_reference_perm.value().dt);
 
-                        forall|j: int| #![auto]
-                            0 <= j < index_proof &&
-                            j < perms.virtual_alarm_states_seq@.len() &&
-                            perms.virtual_alarm_states_seq@[j].armed_perm.is_init() &&
-                            perms.virtual_alarm_states_seq@[j].armed_perm.value() &&
-                            perms.virtual_alarm_states_seq@[j].dt_reference_perm.is_init() ==> {
-                                let j_fire_time = perms.virtual_alarm_states_seq@[j].dt_reference_perm.value()
-                                    .reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[j].dt_reference_perm.value().dt);
-                                min_fire_time.spec_wrapping_sub(now).get_value() <= j_fire_time.spec_wrapping_sub(now).get_value()
-                            }
-                    }, */
+                    //     forall|j: int| #![auto]
+                    //         0 <= j < index_proof &&
+                    //         j < perms.virtual_alarm_states_seq@.len() &&
+                    //         perms.virtual_alarm_states_seq@[j].armed_perm.is_init() &&
+                    //         perms.virtual_alarm_states_seq@[j].armed_perm.value() &&
+                    //         perms.virtual_alarm_states_seq@[j].dt_reference_perm.is_init() ==> {
+                    //             let j_fire_time = perms.virtual_alarm_states_seq@[j].dt_reference_perm.value()
+                    //                 .reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[j].dt_reference_perm.value().dt);
+                    //             min_fire_time.spec_wrapping_sub(now).get_value() <= j_fire_time.spec_wrapping_sub(now).get_value()
+                    //         }
+                    // },
             {
                 let tracked old_index_proof = index_proof; // Capture index before iterator.next()
                 match iterator.next(&exec_ghost_ref) {
