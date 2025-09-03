@@ -211,13 +211,11 @@ impl<'a> VirtualMuxAlarm<'a> {
             perms.armed_perm.value() == false,
     {
         if !*self.armed.borrow(Tracked(&perms.armed_perm)) {
-            assert(perms.armed_perm.value() == false);
             return Ok(());
         }
 
         proof {
             assert(mux_perms.virtual_alarm_states_seq@[sequence_index].armed_perm.value() == perms.armed_perm.value());
-            assert(mux_perms.virtual_alarm_states_seq@[sequence_index].armed_perm.value() == true);
 
             self.mux.prove_enabled_positive_with_armed_alarm(mux_perms, sequence_index);
         }
@@ -225,7 +223,6 @@ impl<'a> VirtualMuxAlarm<'a> {
         let mut enabled = self.mux.enabled.borrow(Tracked(&mux_perms.enabled_perm));
 
         self.armed.replace(Tracked(&mut perms.armed_perm), false);
-        assert(perms.armed_perm.value() == false);
         enabled = &(*enabled - 1);
 
         if *enabled > 0 {
@@ -503,16 +500,6 @@ impl<'a> MuxAlarm<'a> {
             cur.armed.id() === virtual_perms.armed_perm.id(),
             cur.dt_reference.id() === virtual_perms.dt_reference_perm.id(),
     {
-        assert(perms.virtual_alarms_state.is_some());
-        assert(perms.virtual_alarms_state@.unwrap()@.points_to_map.dom().contains(index as nat));
-        assert(perms.virtual_alarms_state@.unwrap()@.points_to_map[index as nat].value().is_some());
-        assert(perms.virtual_alarms_state@.unwrap()@.points_to_map[index as nat].value().unwrap().armed.id() === perms.virtual_alarm_states_seq@[index].armed_perm.id());
-        assert(perms.virtual_alarms_state@.unwrap()@.points_to_map[index as nat].value().unwrap().dt_reference.id() === perms.virtual_alarm_states_seq@[index].dt_reference_perm.id());
-        assert(cur.armed.id() === perms.virtual_alarms_state@.unwrap()@.points_to_map[index as nat].value().unwrap().armed.id());
-        assert(cur.dt_reference.id() === perms.virtual_alarms_state@.unwrap()@.points_to_map[index as nat].value().unwrap().dt_reference.id());
-        assert(cur.armed.id() === perms.virtual_alarm_states_seq@[index].armed_perm.id());
-        assert(cur.dt_reference.id() === perms.virtual_alarm_states_seq@[index].dt_reference_perm.id());
-
         self.establish_tracked_borrow_correspondence(virtual_perms, perms, index);
     }
 
@@ -528,8 +515,6 @@ impl<'a> MuxAlarm<'a> {
             perms.virtual_alarm_states_seq@[index].armed_perm.is_init(),
             perms.virtual_alarm_states_seq@[index].dt_reference_perm.is_init(),
     {
-        assert(perms.virtual_alarm_states_seq@[index].armed_perm.is_init());
-        assert(perms.virtual_alarm_states_seq@[index].dt_reference_perm.is_init());
     }
 
     pub proof fn establish_tracked_borrow_correspondence(
@@ -546,7 +531,6 @@ impl<'a> MuxAlarm<'a> {
             virtual_perms.armed_perm.id() === perms.virtual_alarm_states_seq@[index].armed_perm.id(),
             virtual_perms.dt_reference_perm.id() === perms.virtual_alarm_states_seq@[index].dt_reference_perm.id(),
     {
-        assert(*virtual_perms === perms.virtual_alarm_states_seq@[index]);
     }
 
     pub proof fn establish_armed_correspondence(
@@ -564,7 +548,6 @@ impl<'a> MuxAlarm<'a> {
             virtual_perms.armed_perm.value() == armed_value ==>
                 perms.virtual_alarm_states_seq@[index].armed_perm.value() == armed_value,
     {
-        assert(*virtual_perms === perms.virtual_alarm_states_seq@[index]);
     }
 
     pub proof fn establish_borrowed_value_correspondence(
@@ -583,9 +566,6 @@ impl<'a> MuxAlarm<'a> {
             dt_reference.reference.get_value() == perms.virtual_alarm_states_seq@[index].dt_reference_perm.value().reference.get_value(),
             dt_reference.dt.get_value() == perms.virtual_alarm_states_seq@[index].dt_reference_perm.value().dt.get_value(),
     {
-        assert(*virtual_perms === perms.virtual_alarm_states_seq@[index]);
-        assert(*dt_reference === virtual_perms.dt_reference_perm.value());
-        assert(*dt_reference === perms.virtual_alarm_states_seq@[index].dt_reference_perm.value());
     }
 
     pub proof fn establish_node_structural_properties(
@@ -624,10 +604,6 @@ impl<'a> MuxAlarm<'a> {
         ensures
             perms.enabled_perm.value() > 0,
     {
-        assert(exists|i: int| #![auto] 0 <= i < perms.virtual_alarm_states_seq@.len() &&
-            perms.virtual_alarm_states_seq@[i].armed_perm.is_init() &&
-            perms.virtual_alarm_states_seq@[i].armed_perm.value());
-        assert(perms.enabled_perm.value() > 0);
     }
 
 
@@ -841,39 +817,19 @@ impl<'a> MuxAlarm<'a> {
         let tracked mut firing_perm = perms.firing_perm;
         self.firing.replace(Tracked(&mut firing_perm), true);
 
-        assert(perms.virtual_alarms_state.is_some());
-
         let ghost original_old_len = old(perms).virtual_alarm_states_seq@.len();
-
         let tracked ghost_state = perms.virtual_alarms_state.tracked_unwrap().get();
         let exec_ghost_ref = Tracked(ghost_state);
 
         proof {
-            perms.virtual_alarms_state = Some(Tracked(ghost_state));
-            assert(original_old_len == perms.virtual_alarm_states_seq@.len());
+            perms.virtual_alarms_state = Some(exec_ghost_ref);
         }
+
         let mut iterator = ListIteratorV::new(
             self.virtual_alarms.as_ref().unwrap(),
         &exec_ghost_ref);
 
-        proof {
-            assert(original_old_len == perms.virtual_alarm_states_seq@.len());
-        }
-
-        proof {
-
-            assert(original_old_len == perms.virtual_alarm_states_seq@.len());
-
-            perms.virtual_alarms_state = Some(exec_ghost_ref);
-
-            assert(original_old_len == perms.virtual_alarm_states_seq@.len());
-
-            assert(original_old_len == perms.virtual_alarm_states_seq@.len());
-        }
-
         let ghost mut index : int = 0int;
-        // for cur in self.virtual_alarms.iter() {
-        // while let Some(cur) = current {
         loop
             invariant
                 self.mux_alarm_wf(perms),
@@ -887,38 +843,14 @@ impl<'a> MuxAlarm<'a> {
             let ghost old_index = index;
             match iterator.next(&exec_ghost_ref) {
                 Some(cur) => {
-                    proof {
-                        assert(exec_ghost_ref@ == perms.virtual_alarms_state@.unwrap()@);
-                        assert(old_index + 1 < exec_ghost_ref@.cells.len());
-                        assert(old_index < original_old_len);
-
-                        assert(cur == exec_ghost_ref@.points_to_map[old_index as nat].value().unwrap());
-                    }
-
-                    assert(0 <= old_index < original_old_len);
                     let ghost sequence_index = old_index;
-
                     let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().tracked_borrow(sequence_index);
 
-
-                    assert(perms.virtual_alarms_state@.unwrap()@.points_to_map.dom().contains(sequence_index as nat));
-                    assert(perms.virtual_alarms_state@.unwrap()@.points_to_map[sequence_index as nat].value().is_some());
-
-                    assert(exec_ghost_ref@ == perms.virtual_alarms_state@.unwrap()@);
-                    assert(cur === perms.virtual_alarms_state@.unwrap()@.points_to_map[sequence_index as nat].value().unwrap());
-                    proof {
-                        assert(*virtual_perms === perms.virtual_alarm_states_seq@[sequence_index]);
-                        self.establish_iterator_correspondence(cur, &virtual_perms, perms, sequence_index);
-                    }
-                    assert(virtual_perms.dt_reference_perm.is_init());
                     let dt_ref: &TickDtReference<Ticks32> = cur.dt_reference.borrow(
                         Tracked(&perms.virtual_alarm_states_seq.borrow().tracked_borrow(sequence_index).dt_reference_perm)
                     );
 
-                    assert(self.alarm.fake_alarm_wf(perms.alarm));
                     let now = self.alarm.now(Tracked(&mut *perms.alarm));
-
-                    assert(virtual_perms.armed_perm.is_init());
 
                     if *cur.armed.borrow(
                         Tracked(&perms.virtual_alarm_states_seq.borrow().tracked_borrow(sequence_index).armed_perm)
@@ -926,12 +858,6 @@ impl<'a> MuxAlarm<'a> {
                         dt_ref.reference,
                         dt_ref.reference_plus_dt(),
                     ) {
-                        proof {
-                            // From system invariant: all dt_reference entries have extended == false
-                            assert(perms.virtual_alarm_states_seq@[sequence_index].dt_reference_perm.value().extended == false);
-
-                            assert(dt_ref.extended == false);
-                        }
                         if dt_ref.extended {
                             let tracked mut dt_ref_perm = virtual_perms.dt_reference_perm;
                             cur.dt_reference.replace(Tracked(&mut dt_ref_perm),
@@ -945,118 +871,52 @@ impl<'a> MuxAlarm<'a> {
                             let tracked mut armed_perm = virtual_perms.armed_perm;
                             cur.armed.replace(Tracked(&mut armed_perm), false);
 
-                            proof {
-                                assert(original_old_len == perms.virtual_alarm_states_seq@.len());
-                            }
-
                             let tracked mut enabled_perm = perms.enabled_perm;
-                            assert(enabled_perm.is_init());
-                            assert(self.enabled.id() === enabled_perm.id());
-                            proof {
-                                self.prove_enabled_positive_with_armed_alarm(perms, sequence_index);
-                            }
                             self.enabled.replace(Tracked(&mut enabled_perm), self.enabled.borrow(Tracked(&perms.enabled_perm)) - 1);
 
 
                             proof {
                                 perms.num_fired_alarms = perms.num_fired_alarms + 1;
-                            }
-
-                            proof {
                                 self.establish_tracked_borrow_correspondence(&virtual_perms, perms, sequence_index);
                                 self.establish_node_structural_properties(cur, &virtual_perms, perms, sequence_index);
                             }
-                            proof {
-                                assert(cur.mux.virtual_alarms.is_some());
-                                assert(cur.next.is_some());
-                                assert(virtual_perms.dt_reference_perm.is_init());
-                                assert(virtual_perms.armed_perm.is_init());
-                                assert(cur.dt_reference.id() == virtual_perms.dt_reference_perm.id());
-                                assert(cur.armed.id() == virtual_perms.armed_perm.id());
-                            }
-                            proof {
-                                let complete_perms = &perms.virtual_alarm_states_seq@[sequence_index];
-                                assert(complete_perms.dt_reference_perm.is_init());
-                                assert(complete_perms.armed_perm.is_init());
-                            }
-
-                            assert(cur.mux.virtual_alarms.is_some());
-                            assert(cur.next.is_some());
-                            assert(virtual_perms.dt_reference_perm.is_init());
-                            assert(virtual_perms.armed_perm.is_init());
-                            assert(cur.dt_reference.id() == virtual_perms.dt_reference_perm.id());
-                            assert(cur.armed.id() == virtual_perms.armed_perm.id());
-
-                            assert(virtual_perms.armed_perm.is_init());
-                            assert(virtual_perms.dt_reference_perm.is_init());
-
-                            assert(self.mux_alarm_wf(perms));
-                            assert(0 <= sequence_index < perms.virtual_alarm_states_seq@.len());
-                            assert(*virtual_perms === perms.virtual_alarm_states_seq@[sequence_index]);
-                            assert(perms.virtual_alarm_states_seq@[sequence_index].next_perm.is_init());
-                            assert(virtual_perms.next_perm.is_init());
-
-                            assert(cur.mux === self);
-                            assert(self.mux_alarm_wf(perms));
 
                             assume(cur.mux.mux_alarm_wf(virtual_perms.mux_perm));
-
-                            assert(cur.wf(&virtual_perms));
                             cur.alarm(Tracked(&virtual_perms));
                         }
                     }
-                    proof {
-                        index = old_index + 1;
-                    }
+                    proof { index = old_index + 1; }
                 },
                 None => break,
             }
-            // let mut current = self.virtual_alarms.head();
-
-        }
-
-        proof {
-            assert(original_old_len == perms.virtual_alarm_states_seq@.len());
         }
 
         let tracked mut firing_perm = perms.firing_perm;
-        assert(self.firing.id() === firing_perm.id());
-        assert(firing_perm.is_init());
         self.firing.replace(Tracked(&mut firing_perm), false);
 
-        assert(self.alarm.fake_alarm_wf(perms.alarm));
         let now = self.alarm.now(Tracked(&mut *perms.alarm));
-
-        assert(perms.virtual_alarms_state.is_some());
-
-        if true {
-
-            let mut iterator = ListIteratorV::new(
-                self.virtual_alarms.as_ref().unwrap(),
+        
+        let mut iterator = ListIteratorV::new(
+            self.virtual_alarms.as_ref().unwrap(),
             &exec_ghost_ref);
 
-            let mut min_ticks: Option<Ticks32> = None;
-            let mut min_alarm: Option<&VirtualMuxAlarm> = None;
-            let mut min_alarm_index = None;
-            let tracked mut min_alarm_index_proof = None;
-            let tracked mut index_proof: int = 0int;
-            let mut index = 0;
+        let mut min_ticks: Option<Ticks32> = None;
+        let mut min_alarm: Option<&VirtualMuxAlarm> = None;
+        let mut min_alarm_index = None;
+        let tracked mut min_alarm_index_proof = None;
+        let tracked mut index_proof: int = 0int;
+        let mut index = 0;
 
-            loop
-                invariant
+        loop
+            invariant
                     self.mux_alarm_wf(perms),
-                    perms.virtual_alarms_state.is_some(),
                     iterator.valid_list_iterator(&exec_ghost_ref),
-
-                    perms.virtual_alarms_state@.unwrap()@.cells.len() == perms.virtual_alarm_states_seq@.len() + 1,
                     perms.virtual_alarm_states_seq@.len() == original_old_len,
-                    0 <= index_proof <= perms.virtual_alarm_states_seq@.len(),
+                    perms.virtual_alarms_state@.unwrap()@.cells.len() == perms.virtual_alarm_states_seq@.len() + 1,
                     exec_ghost_ref@ == perms.virtual_alarms_state@.unwrap()@,
+                    0 <= index_proof <= perms.virtual_alarm_states_seq@.len(),
                     index_proof == iterator.index@,
-
-                    index_proof >= 0,
                     index == index_proof as usize,
-                    index <= perms.virtual_alarm_states_seq@.len(),
 
                     min_alarm.is_some() ==> min_alarm_index_proof.is_some(),
 
@@ -1103,33 +963,12 @@ impl<'a> MuxAlarm<'a> {
                             }
                     }, */
             {
-                assert(perms.virtual_alarms_state.is_some());
-                assert(iterator.valid_list_iterator(&exec_ghost_ref));
-
                 let tracked old_index_proof = index_proof; // Capture index before iterator.next()
                 match iterator.next(&exec_ghost_ref) {
                     Some(cur) => {
-                        proof {
-                            assert(exec_ghost_ref@ == perms.virtual_alarms_state@.unwrap()@);
-                            assert(old_index_proof + 1 < exec_ghost_ref@.cells.len()); // From iterator postcondition
-                            assert(old_index_proof + 1 < perms.virtual_alarms_state@.unwrap()@.cells.len()); // Therefore
-                            assert(old_index_proof + 1 < original_old_len + 1);
-                            assert(old_index_proof < original_old_len);
-                            assert(old_index_proof < perms.virtual_alarm_states_seq@.len()); // Since original_old_len == seq.len()
-                        }
-                        assert(0 <= old_index_proof < perms.virtual_alarm_states_seq@.len());
                         let tracked virtual_perms = perms.virtual_alarm_states_seq.borrow().tracked_borrow(old_index_proof);
                         proof {
-                            assert(exec_ghost_ref@ == perms.virtual_alarms_state@.unwrap()@);
-
-                            assert(cur == exec_ghost_ref@.points_to_map[old_index_proof as nat].value().unwrap());
-
-                            assert(cur === perms.virtual_alarms_state@.unwrap()@.points_to_map[old_index_proof as nat].value().unwrap());
-
-                            assert(*virtual_perms === perms.virtual_alarm_states_seq@[old_index_proof]);
                             self.establish_iterator_correspondence(cur, &virtual_perms, perms, old_index_proof);
-                            self.prove_virtual_alarm_initialization(perms, old_index_proof);
-                            self.establish_tracked_borrow_correspondence(&virtual_perms, perms, old_index_proof);
                         }
 
                             if *cur.armed.borrow(
@@ -1138,10 +977,6 @@ impl<'a> MuxAlarm<'a> {
                                     let when = cur.dt_reference.borrow(
                                 Tracked(&perms.virtual_alarm_states_seq.borrow().tracked_borrow(old_index_proof).dt_reference_perm)
                             );
-
-                            proof {
-                                assert(original_old_len == perms.virtual_alarm_states_seq@.len());
-                            }
 
                             let ticks = if !now.within_range(when.reference, when.reference_plus_dt()) {
                                 Ticks32::from_or_max(0u64)
@@ -1154,82 +989,22 @@ impl<'a> MuxAlarm<'a> {
                                     min_ticks = Some(ticks);
                                     min_alarm = Some(cur);
                                     min_alarm_index = Some(index);
-                                    proof {
-                                        min_alarm_index_proof = Some(old_index_proof);
-                                        assert(0 <= old_index_proof < perms.virtual_alarm_states_seq@.len());
-                                        assert(virtual_perms.armed_perm.id() === perms.virtual_alarm_states_seq@[old_index_proof].armed_perm.id());
-                                        assert(perms.virtual_alarm_states_seq@[old_index_proof].armed_perm.is_init());
-                                        assert(virtual_perms.armed_perm.is_init());
-                                        assert(cur.armed.id() === virtual_perms.armed_perm@.pcell);
-                                        assert(virtual_perms.armed_perm.value() == true);
-                                        assert(*virtual_perms === perms.virtual_alarm_states_seq@[old_index_proof]);
-                                        self.establish_armed_correspondence(&virtual_perms, perms, old_index_proof, true);
-                                        assert(perms.virtual_alarm_states_seq@[old_index_proof].armed_perm.value() == true);
-
-                                        // MINIMUM PROPERTY (Case 1): This is the first armed alarm found, so trivially minimum so far
-                                        // Establish the stronger invariant: min_ticks corresponds to fire time calculation
-                                        let fire_time = perms.virtual_alarm_states_seq@[old_index_proof].dt_reference_perm.value()
-                                            .reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[old_index_proof].dt_reference_perm.value().dt);
-
-                                        if fire_time.spec_wrapping_sub(now).get_value() == ticks.get_value() {
-                                        } else {
-                                            assert(ticks.get_value() == 0);
-                                        }
-
-                                    }
+                                    proof { min_alarm_index_proof = Some(old_index_proof); self.establish_armed_correspondence(&virtual_perms, perms, old_index_proof, true); }
                                 },
                                 Some(min) if ticks.into_usize() < min.into_usize() => {
                                     min_ticks = Some(ticks);
                                     min_alarm = Some(cur);
                                     min_alarm_index = Some(index);
-                                    proof {
-                                        min_alarm_index_proof = Some(old_index_proof);
-                                        assert(0 <= old_index_proof < perms.virtual_alarm_states_seq@.len());
-                                        assert(virtual_perms.armed_perm.id() === perms.virtual_alarm_states_seq@[old_index_proof].armed_perm.id());
-                                        assert(perms.virtual_alarm_states_seq@[old_index_proof].armed_perm.is_init());
-                                        assert(virtual_perms.armed_perm.is_init());
-                                        assert(cur.armed.id() === virtual_perms.armed_perm@.pcell);
-                                        assert(virtual_perms.armed_perm.value() == true);
-                                        assert(*virtual_perms === perms.virtual_alarm_states_seq@[old_index_proof]);
-                                        self.establish_armed_correspondence(&virtual_perms, perms, old_index_proof, true);
-                                        assert(perms.virtual_alarm_states_seq@[old_index_proof].armed_perm.value() == true);
-
-                                        // MINIMUM PROPERTY (Case 2): Found a better (smaller ticks) alarm
-                                        // Establish the stronger invariant for the new minimum
-                                        let fire_time = perms.virtual_alarm_states_seq@[old_index_proof].dt_reference_perm.value()
-                                            .reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[old_index_proof].dt_reference_perm.value().dt);
-
-                                        // The condition ticks < min ensures this is a better choice
-                                        // Maintain the stronger invariant: ticks corresponds to fire time calculation
-                                        if fire_time.spec_wrapping_sub(now).get_value() == ticks.get_value() {
-                                            // Normal case: ticks = fire_time - now, and ticks < previous minimum
-                                        } else {
-                                            assert(ticks.get_value() == 0);
-                                        }
-
-                                    }
+                                    proof { min_alarm_index_proof = Some(old_index_proof); self.establish_armed_correspondence(&virtual_perms, perms, old_index_proof, true); }
                                 },
                                 _ => {
                                 },
                             }
                         } else {
-                            proof {
-                                assert(0 <= old_index_proof < perms.virtual_alarm_states_seq@.len());
-                                assert(virtual_perms.armed_perm.id() === perms.virtual_alarm_states_seq@[old_index_proof].armed_perm.id());
-                                assert(perms.virtual_alarm_states_seq@[old_index_proof].armed_perm.is_init());
-                                assert(virtual_perms.armed_perm.is_init());
-                                assert(cur.armed.id() === virtual_perms.armed_perm@.pcell);
-                                assert(virtual_perms.armed_perm.value() == false);
-                                assert(*virtual_perms === perms.virtual_alarm_states_seq@[old_index_proof]);
-                                self.establish_armed_correspondence(&virtual_perms, perms, old_index_proof, false);
-                                assert(perms.virtual_alarm_states_seq@[old_index_proof].armed_perm.value() == false);
-                            }
+                            proof { self.establish_armed_correspondence(&virtual_perms, perms, old_index_proof, false); }
                         }
-                        assert(index < 1000);
                         index = index + 1;
-                        proof {
-                            index_proof = index_proof + 1 as int;
-                        }
+                        proof { index_proof = index_proof + 1 as int; }
                     },
                     None => break,
                 }
@@ -1241,205 +1016,28 @@ impl<'a> MuxAlarm<'a> {
                 None
             };
 
-            proof {
-                let ghost final_iterator_position = iterator.index@;
-                let ghost final_min_alarm = min_alarm;
-                let ghost final_min_index = min_alarm_index_proof;
-
-                assert(iterator.valid_list_iterator(&exec_ghost_ref));
-                assert(final_iterator_position <= perms.virtual_alarm_states_seq@.len());
-
-                if final_min_index.is_some() {
-                    let k_proof = final_min_index.unwrap();
-
-                    assert(captured_index_proof.is_some());
-                    assert(captured_index_proof.unwrap() == k_proof);
-                    assert(0 <= k_proof < perms.virtual_alarm_states_seq@.len());
-                    assert(perms.virtual_alarm_states_seq@[k_proof].dt_reference_perm.is_init());
-                    assert(perms.virtual_alarm_states_seq@[k_proof].armed_perm.is_init());
-                    // This is the key property from the loop invariant that we need to persist
-                    assert(perms.virtual_alarm_states_seq@[k_proof].armed_perm.value());
-
-                    if final_min_alarm.is_some() {
-                        assert(final_min_alarm.unwrap().dt_reference.id() === perms.virtual_alarm_states_seq@[k_proof].dt_reference_perm.id());
-                    }
-
-                }
-            }
-
-            proof {
-                if captured_index_proof.is_some() {
-                    let k_for_later = captured_index_proof.unwrap();
-                    assert(0 <= k_for_later < perms.virtual_alarm_states_seq@.len());
-                    assert(perms.virtual_alarm_states_seq@[k_for_later].armed_perm.value());
-                } else {
-                    // Key insight: if min_alarm.is_none(), we processed all alarms and found none armed
-                    assert(min_alarm.is_none());
-                    let final_pos = iterator.index@;
-                    assert(final_pos <= perms.virtual_alarm_states_seq@.len());
-                }
-            }
 
             proof {
                 if captured_index_proof.is_some() {
                     let k_min = captured_index_proof.unwrap();
-
-
-                    assert(captured_index_proof.is_some());
-                    assert(k_min == captured_index_proof.unwrap());
-
-                    assert(min_alarm_index_proof.is_some());
-                    assert(k_min == min_alarm_index_proof.unwrap());
-
-                    assert(0 <= k_min < perms.virtual_alarm_states_seq@.len());
-                    assert(perms.virtual_alarm_states_seq@[k_min].armed_perm.is_init());
-                    assert(perms.virtual_alarm_states_seq@[k_min].armed_perm.value());
-                    assert(perms.virtual_alarm_states_seq@[k_min].dt_reference_perm.is_init());
-
                     let k_fire_time = perms.virtual_alarm_states_seq@[k_min].dt_reference_perm.value().reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[k_min].dt_reference_perm.value().dt);
-
-                    assert(k_fire_time.spec_wrapping_sub(now).get_value() <= k_fire_time.spec_wrapping_sub(now).get_value());
-
-                    assert(min_alarm_index_proof.is_some()); // From context: we're in the Some(valrm) branch
-                    assert(k_min == min_alarm_index_proof.unwrap());
-
-                    assert(iterator.index@ <= perms.virtual_alarm_states_seq@.len());
-
-                    assert(min_alarm_index_proof.is_some() ==> {
-                        k_min == min_alarm_index_proof.unwrap() &&
-                        k_fire_time == perms.virtual_alarm_states_seq@[min_alarm_index_proof.unwrap()].dt_reference_perm.value()
-                            .reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[min_alarm_index_proof.unwrap()].dt_reference_perm.value().dt)
-                    });
-
-                    assume(forall|j: int| #![auto]
-                        0 <= j < perms.virtual_alarm_states_seq@.len() &&
-                        perms.virtual_alarm_states_seq@[j].armed_perm.is_init() &&
-                        perms.virtual_alarm_states_seq@[j].armed_perm.value() &&
-                        perms.virtual_alarm_states_seq@[j].dt_reference_perm.is_init() ==> {
-                            let j_fire_time = perms.virtual_alarm_states_seq@[j].dt_reference_perm.value().reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[j].dt_reference_perm.value().dt);
-                            k_fire_time.spec_wrapping_sub(now).get_value() <= j_fire_time.spec_wrapping_sub(now).get_value()
-                        });
                 }
             }
 
-            let next = min_alarm;
-
-
-                if let Some(valrm) = next {
-                assert(valrm.dt_reference.id() === perms.virtual_alarm_states_seq@.index(min_alarm_index_proof.unwrap()).dt_reference_perm.id());
+            if let Some(valrm) = min_alarm {
                 let dt_reference = valrm.dt_reference.borrow(Tracked(&perms.virtual_alarm_states_seq.borrow().tracked_borrow(min_alarm_index_proof.unwrap()).dt_reference_perm));
-
-                proof {
-                    let ghost pre_k = captured_index_proof.unwrap();
-                    let ghost pre_bounds = (0 <= pre_k < perms.virtual_alarm_states_seq@.len());
-                    let ghost pre_armed = perms.virtual_alarm_states_seq@[pre_k].armed_perm.value();
-                    let ghost pre_dt_ref = perms.virtual_alarm_states_seq@[pre_k].dt_reference_perm.value();
-
-                    assert(pre_bounds);
-                    assert(pre_armed);
-                    assert(pre_dt_ref == dt_reference);
-                }
-
-                assert(self.mux_alarm_wf(perms));
-                assert(original_old_len == perms.virtual_alarm_states_seq@.len());
 
                 self.set_alarm(dt_reference.reference, dt_reference.dt, Tracked(&mut *perms));
 
-                assert(original_old_len == perms.virtual_alarm_states_seq@.len());
-
                 proof {
-                    assert(min_alarm.is_some());
-                    assert(min_alarm_index_proof.is_some());
-                    assert(captured_index_proof.is_some());
                     let k = captured_index_proof.unwrap();
-
-                    assert(k == captured_index_proof.unwrap());
-                    assert(k == min_alarm_index_proof.unwrap());
-
-                    assert(self.mux_alarm_wf(perms));
-
-                    assert(0 <= k) by {
-                    };
-
-                    assert(k < perms.virtual_alarm_states_seq@.len());
-
-                    assert(min_alarm_index_proof.is_some());
-                    assert(k == min_alarm_index_proof.unwrap());
-                    assert(k == captured_index_proof.unwrap());
-
-
-                    assert(captured_index_proof.is_some());
-                    assert(min_alarm_index_proof.is_some());
-                    assert(k == captured_index_proof.unwrap());
-                    assert(k == min_alarm_index_proof.unwrap());
-                    assert(0 <= k < perms.virtual_alarm_states_seq@.len());
-
-
-                    assert(min_alarm.is_some());
-                    assert(min_alarm_index_proof.is_some());
-
-                    assert(min_alarm_index_proof.is_some());
-                    assert(k == min_alarm_index_proof.unwrap());
-
-                    assume(perms.virtual_alarm_states_seq@[k].armed_perm.value() == true);
-                    assert(k == min_alarm_index_proof.unwrap());
-
-
+                    assume(perms.virtual_alarm_states_seq@[k].armed_perm.value());
                     let tracked virtual_perms_for_proof = perms.virtual_alarm_states_seq.borrow().tracked_borrow(k);
-                    assert(*virtual_perms_for_proof === perms.virtual_alarm_states_seq@[k]);
                     self.establish_tracked_borrow_correspondence(&virtual_perms_for_proof, perms, k);
                     self.establish_armed_correspondence(&virtual_perms_for_proof, perms, k, true);
-                    assert(virtual_perms_for_proof.armed_perm.id() === perms.virtual_alarm_states_seq@[k].armed_perm.id());
-                    assert(min_alarm.is_some());
-                    assert(min_alarm_index_proof.is_some());
-                    assert(k == min_alarm_index_proof.unwrap());
-
-                    assert(min_alarm_index_proof.is_some());
-                    assert(k == min_alarm_index_proof.unwrap());
-                    assert(0 <= k < perms.virtual_alarm_states_seq@.len());
-
-                    assert(perms.virtual_alarm_states_seq@[k].dt_reference_perm.is_init());
-                    assert(perms.virtual_alarm_states_seq@[k].armed_perm.is_init());
-
-                    assert(min_alarm_index_proof.is_some());
-                    assert(k == min_alarm_index_proof.unwrap());
-
-
-                    assert(captured_index_proof.is_some());
-                    assert(captured_index_proof.unwrap() == k);
-
-                    assume(perms.virtual_alarm_states_seq@[k].armed_perm.value() == true);
-                    assert(*virtual_perms_for_proof === perms.virtual_alarm_states_seq@[k]);
-                    assert(virtual_perms_for_proof.armed_perm.value() == true);
-
-                    assert(perms.virtual_alarm_states_seq@[k].armed_perm.is_init());
-                    assert(perms.virtual_alarm_states_seq@[k].dt_reference_perm.is_init());
-                    assert(perms.next_tick_vals_perm.value().is_some());
-                    assert(perms.next_tick_vals_perm.value().unwrap().0.get_value() == dt_reference.reference.get_value());
-                    assert(perms.next_tick_vals_perm.value().unwrap().1.get_value() == dt_reference.dt.get_value());
-
-                    assert(k == min_alarm_index_proof.unwrap());
-                    assert(perms.next_tick_vals_perm.value().unwrap().0.get_value() == dt_reference.reference.get_value());
-                    assert(perms.next_tick_vals_perm.value().unwrap().1.get_value() == dt_reference.dt.get_value());
-
                     assume(dt_reference.reference.get_value() == perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().reference.get_value());
                     assume(dt_reference.dt.get_value() == perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().dt.get_value());
-                    assert(perms.next_tick_vals_perm.value().unwrap().0.get_value() == perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().reference.get_value());
-                    assert(perms.next_tick_vals_perm.value().unwrap().1.get_value() == perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().dt.get_value());
-
                     assert(perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().dt).get_value() == perms.next_tick_vals_perm.value().unwrap().0.spec_wrapping_add(perms.next_tick_vals_perm.value().unwrap().1).get_value());
-
-                    assert(0 <= k < perms.virtual_alarm_states_seq@.len());
-                    assert(perms.virtual_alarm_states_seq@[k].armed_perm.is_init());
-                    assert(perms.virtual_alarm_states_seq@[k].dt_reference_perm.is_init());
-
-                    let k_fire_time = perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().reference.spec_wrapping_add(perms.virtual_alarm_states_seq@[k].dt_reference_perm.value().dt);
-
-                    assert(perms.next_tick_vals_perm.value().unwrap().0.spec_wrapping_add(perms.next_tick_vals_perm.value().unwrap().1).get_value() == k_fire_time.get_value());
-                    assert(old(perms).next_tick_vals_perm.value().is_some());
-
-
-
                     assume(forall|j: int| #![auto]
                         0 <= j < perms.virtual_alarm_states_seq@.len() &&
                         perms.virtual_alarm_states_seq@[j].armed_perm.is_init() &&
@@ -1451,52 +1049,12 @@ impl<'a> MuxAlarm<'a> {
                         });
                 }
             } else {
-                assert(self.mux_alarm_wf(perms));
-
-                proof {
-                    assert(original_old_len == perms.virtual_alarm_states_seq@.len());
-                }
-
-                proof {
-                    perms.num_total_alarms = 0;
-                }
+                proof { perms.num_total_alarms = 0; }
                 self.disarm(Tracked(&mut *perms));
-
-                proof {
-                    assert(original_old_len == perms.virtual_alarm_states_seq@.len());
-                }
-
-                proof {
-                    assert(min_alarm.is_none());
-                    assume(forall|i: int| #![auto] 0 <= i < perms.virtual_alarm_states_seq@.len() &&
+                proof { assume(forall|i: int| #![auto] 0 <= i < perms.virtual_alarm_states_seq@.len() &&
                            perms.virtual_alarm_states_seq@[i].armed_perm.is_init() ==>
-                           !perms.virtual_alarm_states_seq@[i].armed_perm.value());
-                }
+                           !perms.virtual_alarm_states_seq@[i].armed_perm.value()); }
             }
-        } else {
-            assert(self.mux_alarm_wf(perms));
-            assert(Self::spec_count_armed_alarms(perms.virtual_alarm_states_seq@) == 0);
-
-            proof {
-                assert(Self::spec_count_armed_alarms(perms.virtual_alarm_states_seq@) == 0);
-
-                assert(perms.num_total_alarms == 0);
-            }
-            self.disarm(Tracked(&mut *perms));
-            proof {
-                assert(forall|i: int| #![auto] 0 <= i < perms.virtual_alarm_states_seq@.len() &&
-                       perms.virtual_alarm_states_seq@[i].armed_perm.is_init() ==>
-                       !perms.virtual_alarm_states_seq@[i].armed_perm.value());
-            }
-        }
-
-        proof {
-            assert(self.mux_alarm_wf(perms));
-        }
-
-        proof {
-            assert(original_old_len == perms.virtual_alarm_states_seq@.len());
-        }
 
         proof {
             assume(forall|i: int| #![auto]
@@ -1950,10 +1508,11 @@ impl Ticks for Ticks32 {
     }
 
     fn into_usize(self) -> (result: usize)
-        ensures result == self.ticks as usize, // Assuming usize >= u32
+        ensures 
+            result == (self.get_value() as usize),
+            self.get_value() >= 0,
     {
         let ret = self.ticks as usize;
-        assert(ret <= self.get_value() as usize);
         ret
     }
 
@@ -2250,7 +1809,6 @@ impl<'a> FakeAlarm<'a> {
             perms.fire_time == (reference.get_value() + dt.get_value()) as int,
     {
         self.reference.replace(Tracked(&mut perms.reference_perm.borrow_mut()), reference);
-        assert(reference.ticks == perms.reference_perm@.mem_contents().value().ticks);
         self.dt.replace(Tracked(&mut perms.dt_perm.borrow_mut()), dt);
         self.armed.replace(Tracked(&mut perms.armed_perm.borrow_mut()), true);
 
@@ -2289,8 +1847,6 @@ impl<'a> FakeAlarm<'a> {
             result == Ok::<(), ErrorCode>(()),
     {
         self.armed.replace(Tracked(&mut perms.armed_perm.borrow_mut()), false);
-        assert(perms.armed_perm@.mem_contents().is_init() == true);
-        assert(perms.armed_perm@.mem_contents().value() == false);
         Ok(())
     }
 
